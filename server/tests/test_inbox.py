@@ -273,6 +273,16 @@ async def test_reply_reaches_the_agent_that_wrote(db):
     assert [m["text"] for m in queued["messages"]] == ["thanks"]
 
 
+def test_reply_argument_keeps_the_ids_of_subscriptions_made_without_it():
+    before = UnsubscribeParams(name="message.received", delivery={"url": HOOK})
+    after = UnsubscribeParams(
+        name="message.received", arguments={"reply": False}, delivery={"url": HOOK}
+    )
+    assert server.subscription_id("turing", before) == server.subscription_id(
+        "turing", after
+    )
+
+
 def test_subscribe_prompt_names_the_inbox_to_watch():
     assert "notes to me," in server.subscribe_prompt()
     assert "my agent 'review-bot'" in server.subscribe_prompt(agent="review-bot")

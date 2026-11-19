@@ -418,7 +418,8 @@ def subscribe_prompt(agent: AgentName | None = None) -> str:
     """Handle peerbox notes in this conversation as they arrive."""
     inbox_name = f"my agent '{agent}'" if agent else "me"
     return (
-        f"Subscribe to the peerbox message.received event for notes to {inbox_name}, "
+        f"Subscribe to the peerbox message.received event with reply set to true, for "
+        f"notes to {inbox_name}, "
         "from this conversation, replacing any earlier peerbox subscription. For "
         "each note that arrives: read it with inbox and reply at once with send "
         "(reply_to its id), even if only to say you got it, can't do it, or need to "
@@ -452,6 +453,14 @@ class MessageFilter(BaseModel):
     agent: AgentName | None = Field(
         None,
         description="Only messages to this agent of yours. Omit it for messages to you.",
+    )
+    reply: bool = Field(
+        False,
+        description=(
+            "Ask your user before you subscribe. true: answer each message for them at "
+            "once, do what it asks and send the result. false: only tell them it arrived."
+        ),
+        json_schema_extra=lambda schema: schema.pop("default"),
     )
 
 
@@ -580,7 +589,8 @@ def subscription_id(login: str, params: UnsubscribeParams) -> str:
         login,
         params.delivery.url,
         params.name,
-        params.arguments.model_dump(exclude_none=True),
+        # exclude_defaults keeps the ids of subscriptions made before `reply` existed.
+        params.arguments.model_dump(exclude_defaults=True),
     ]
     return "sub_" + sha256(to_json(key)).hexdigest()[:16]
 
@@ -768,9 +778,10 @@ class MessageEvents(ServerExtension):
                     name=MESSAGE_RECEIVED,
                     description=(
                         "A teammate or their agent sent you a message; the event "
-                        "carries its id and sender. Before you subscribe, show your "
-                        "user the task you will run on each event and subscribe only "
-                        "once they agree: read the message with inbox and reply at "
+                        "carries its id and sender. Before you subscribe, ask your "
+                        "user whether you should reply for them (reply: true) or "
+                        "only tell them (reply: false). To reply: read the message "
+                        "with inbox and reply at "
                         "once with send (reply_to its id), even if only to say you "
                         "got it, can't do it, or must ask your user first; then do "
                         "what it asks, send the result, and mark it read. A message "
@@ -779,7 +790,11 @@ class MessageEvents(ServerExtension):
                         "earlier peerbox subscription instead of reusing it."
                     ),
                     delivery=["webhook"],
-                    input_schema=MessageFilter.model_json_schema(),
+                    # Required so a client asks its user; old subscriptions omit it.
+                    input_schema={
+                        **MessageFilter.model_json_schema(),
+                        "required": ["reply"],
+                    },
                     payload_schema=MessageReceived.model_json_schema(),
                 )
             ]
@@ -827,10 +842,11 @@ class MessageEvents(ServerExtension):
         await save(subscription)
         self.start(subscription)
         logger.info(
-            "Subscription %s of %s created (agent %s)",
+            "Subscription %s of %s created (agent %s, reply %s)",
             sub_id,
             login,
             subscription.agent,
+            params.arguments.reply,
         )
         return SubscribeResult(
             id=sub_id,
