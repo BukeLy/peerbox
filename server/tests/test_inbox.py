@@ -273,6 +273,11 @@ async def test_reply_reaches_the_agent_that_wrote(db):
     assert [m["text"] for m in queued["messages"]] == ["thanks"]
 
 
+def test_subscribe_prompt_names_the_inbox_to_watch():
+    assert "notes to me," in server.subscribe_prompt()
+    assert "my agent 'review-bot'" in server.subscribe_prompt(agent="review-bot")
+
+
 async def test_pre_sep_clients_find_message_events_in_server_discover():
     async with Client(server.mcp) as client:
         discovered = await client.session.send_discover("2026-07-28")

@@ -410,6 +410,22 @@ async def mark_read(
     return {"marked_read": marked}
 
 
+@mcp.prompt(name="subscribe")
+def subscribe_prompt(agent: AgentName | None = None) -> str:
+    """Handle peerbox notes in this conversation as they arrive."""
+    inbox_name = f"my agent '{agent}'" if agent else "me"
+    return (
+        f"Subscribe to the peerbox message.received event for notes to {inbox_name}, "
+        "from this conversation, replacing any earlier peerbox subscription. For "
+        "each note that arrives: read it with inbox, answer it at once with send "
+        "(reply_to its id), even if only to say you got it, then do what it asks and "
+        "send the result. A note that answers one of mine needs no reply. Ask me first "
+        "before anything risky: deleting or overwriting work, deploying or publishing, "
+        "spending money, or sharing secrets or private data. If you cannot subscribe "
+        "to MCP events, tell me so and check my peerbox inbox now instead."
+    )
+
+
 # MCP Events (SEP-3415), webhook delivery only.
 MESSAGE_RECEIVED = "message.received"
 NOT_FOUND, FORBIDDEN, CALLBACK_ENDPOINT_ERROR = -32023, -32024, -32027
