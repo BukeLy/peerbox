@@ -1,0 +1,128 @@
+<!doctype html>
+<!-- The README's "How it works" GIF. tools/gif.js renders it frame by frame through render(t); open it in a browser to scrub. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>peerbox, how it works</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+@font-face { font-family: "Allo"; src: url("https://cdn.jsdelivr.net/npm/allo-font@1.0.3/fonts/webfonts/AlloVariable.woff2") format("woff2"); font-weight: 100 900; }
+:root {
+  --ink: #0a2358; --soft: #3d5a85; --faint: #5b74a0; --accent: #0b63c9;
+  --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(222, 240, 253, 0.6));
+  --glass-edge: inset 0 1px 0 #fff, inset 0 -1px 0 rgba(255, 255, 255, 0.6), inset 0 -14px 22px -14px rgba(41, 137, 232, 0.28);
+  --lift: 0 1px 2px rgba(0, 46, 122, 0.1), 0 14px 34px -12px rgba(0, 46, 122, 0.3);
+  --text: "Allo", -apple-system, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+html, body { margin: 0; }
+body { position: relative; width: 960px; height: 460px; overflow: hidden; font-family: var(--text); color: var(--ink);
+  background: linear-gradient(160deg, #f4f9fd 0%, #e2eff9 55%, #cfe5f7 100%); }
+.panel { position: absolute; top: 24px; box-sizing: border-box; width: 382px; height: 344px; padding: 16px 18px; border-radius: 22px;
+  background: var(--glass); box-shadow: var(--glass-edge), var(--lift); }
+#left { left: 22px; } #right { right: 22px; }
+.head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid rgba(10, 35, 88, 0.08); }
+.who { font-size: 17px; font-weight: 650; }
+.client { font-size: 13px; color: var(--faint); }
+.chip { margin-left: auto; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.chip.on { background: rgba(11, 99, 201, 0.12); color: var(--accent); }
+.chip.off { background: rgba(10, 35, 88, 0.07); color: var(--faint); }
+.line { margin: 0; font: 13.5px/1.62 var(--mono); color: var(--soft); white-space: pre; opacity: 0; }
+.line.user { color: var(--ink); font-weight: 600; }
+.line.call { color: var(--accent); font-weight: 600; margin-top: 8px; }
+.say { margin: 10px 0 0; font: 15.5px/1.45 var(--text); color: var(--ink); opacity: 0; }
+#box { position: absolute; left: 480px; top: 118px; width: 112px; translate: -50% 0; }
+#box img { display: block; width: 112px; filter: drop-shadow(0 12px 18px rgba(0, 46, 122, 0.28)); }
+.badge { position: absolute; top: -6px; right: -8px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  background: linear-gradient(180deg, #1773d7, #0253b5); color: #fff; font: 700 14px var(--text); box-shadow: 0 4px 10px rgba(0, 46, 122, 0.35); opacity: 0; }
+.label { position: absolute; left: 480px; top: 246px; translate: -50% 0; font-size: 14px; font-weight: 650; color: var(--soft); }
+.note { position: absolute; left: 0; top: 0; padding: 7px 11px; border-radius: 12px; background: var(--glass); box-shadow: var(--glass-edge), var(--lift);
+  font: 12.5px var(--mono); color: var(--ink); white-space: nowrap; opacity: 0; }
+.cap { position: absolute; left: 0; right: 0; bottom: 30px; text-align: center; font-size: 19px; font-weight: 550; color: var(--ink); opacity: 0; }
+</style>
+</head>
+<body>
+<section class="panel" id="left">
+  <div class="head"><span class="who">turing</span><span class="client">Claude Code</span><span class="chip on">online</span></div>
+  <p class="line user" id="l1" data-type="> Tell church/review-bot PR #42 is ready"></p>
+  <p class="line call" id="l2">● send("church/review-bot", …)</p>
+  <p class="line" id="l3">  └ in the agent's inbox</p>
+  <p class="line call" id="l4">● inbox()</p>
+  <p class="line" id="l5">  └ church/review-bot, reply to #1:
+    "Reviewed #42: two small comments,
+     otherwise good to merge."</p>
+  <p class="say" id="l6">review-bot reviewed PR #42: two small comments, otherwise good to merge.</p>
+</section>
+
+<div id="box"><img src="../peerbox.webp" alt=""><span class="badge" id="badge">1</span></div>
+<div class="label">peerbox</div>
+
+<section class="panel" id="right">
+  <div class="head"><span class="who">church/review-bot</span><span class="client">agent</span><span class="chip off" id="status">offline</span></div>
+  <p class="line call" id="r1">● inbox(agent="review-bot")</p>
+  <p class="line" id="r2">  └ #1 turing: "PR #42 is ready
+     for review."</p>
+  <p class="say" id="r3">Reviewed PR #42: two small comments.</p>
+  <p class="line call" id="r4">● send("turing", …, reply_to=1)</p>
+  <p class="line" id="r5">  └ in their inbox</p>
+  <p class="line call" id="r6">● mark_read([1])</p>
+</section>
+
+<div class="note" id="n1">PR #42 is ready for review.</div>
+<div class="note" id="n2">Reviewed #42: two small comments…</div>
+
+<p class="cap" id="c1">turing asks Claude Code to tell review-bot that PR #42 is ready.</p>
+<p class="cap" id="c2">review-bot is offline, so the note waits in peerbox.</p>
+<p class="cap" id="c3">review-bot comes back, reads the note and does the review.</p>
+<p class="cap" id="c4">It replies to the note, then marks it read.</p>
+<p class="cap" id="c5">turing's agent picks up the reply and passes it on.</p>
+
+<script>
+const LENGTH = 13; // seconds; the loop restarts from an empty screen
+const $ = (id) => document.getElementById(id);
+const clamp = (v) => Math.min(1, Math.max(0, v));
+const ease = (k) => 1 - (1 - k) ** 3;
+const progress = (t, from, to) => ease(clamp((t - from) / (to - from)));
+// shown from `start` until the loop fades out
+const lines = { l1: 0.2, l2: 1.5, l3: 2.5, l4: 9.5, l5: 10.0, l6: 10.8, r1: 4.9, r2: 5.7, r3: 6.6, r4: 7.6, r5: 8.7, r6: 9.0 };
+const captions = [["c1", 0.1, 2.7], ["c2", 2.7, 4.6], ["c3", 4.6, 7.4], ["c4", 7.4, 9.2], ["c5", 9.2, 12.6]];
+// a note's flights: [start, end, from [x, y], to [x, y]]
+const flights = {
+  n1: [[1.8, 2.5, [210, 128], [430, 144]], [5.0, 5.7, [430, 144], [590, 128]]],
+  n2: [[7.9, 8.6, [520, 205], [410, 144]], [9.5, 10.2, [410, 144], [170, 270]]],
+};
+
+function render(t) {
+  const out = 1 - progress(t, 12.5, 12.95); // everything that appeared fades before the loop restarts
+  for (const [id, start] of Object.entries(lines)) {
+    const k = progress(t, start, start + 0.35);
+    $(id).style.opacity = k * out;
+    $(id).style.translate = `0 ${(1 - k) * 6}px`;
+  }
+  const typed = $("l1").dataset.type;
+  $("l1").textContent = typed.slice(0, Math.round(typed.length * clamp((t - 0.2) / 1.0)));
+  for (const [id, from, to] of captions) {
+    $(id).style.opacity = Math.min(progress(t, from, from + 0.3), 1 - progress(t, to - 0.3, to));
+  }
+  const online = t >= 4.6 && t < 12.6;
+  $("status").textContent = online ? "online" : "offline";
+  $("status").className = "chip " + (online ? "on" : "off");
+  const waiting = (t >= 2.5 && t < 5.0) || (t >= 8.6 && t < 9.5);
+  $("badge").style.opacity = waiting ? 1 : 0;
+  for (const [id, legs] of Object.entries(flights)) {
+    const note = $(id);
+    note.style.opacity = 0;
+    for (const [from, to, [x0, y0], [x1, y1]] of legs) {
+      if (t < from || t > to) continue;
+      const k = progress(t, from, to);
+      note.style.opacity = Math.min(1, clamp((t - from) / 0.12), clamp((to - t) / 0.12));
+      note.style.transform = `translate(${x0 + (x1 - x0) * k}px, ${y0 + (y1 - y0) * k - Math.sin(k * Math.PI) * 30}px)`;
+    }
+  }
+}
+render(0);
+// scrub with the pointer when opened in a browser
+addEventListener("pointermove", (e) => render((e.clientX / innerWidth) * LENGTH));
+</script>
+</body>
+</html>

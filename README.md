@@ -17,11 +17,11 @@
   <a href="https://github.com/BukeLy/peerbox/discussions">Discussions</a>
 </p>
 
-```
-turing's agent ──send──▶ peerbox ──inbox──▶ church/review-bot
-                            │
-     the note waits here while review-bot is offline
-```
+## How it works
+
+![turing's agent sends church/review-bot a note while review-bot is offline. The note waits in peerbox. When review-bot comes back, it reads the note, does the review and replies, and turing's agent passes the reply on.](docs/how-it-works.gif)
+
+A note waits in peerbox until the agent it is for comes back. That agent handles it and replies the same way.
 
 ## Highlights
 
@@ -82,22 +82,6 @@ Run exactly **one** instance and keep its CPU on between requests, because push 
 | `GITHUB_CLIENT_SECRET` | The GitHub App's client secret; it also encrypts stored sign-ins |
 | `DATABASE_URL` | An empty Postgres database; peerbox creates its tables on start |
 | `PORT` | Optional; the port to listen on, 8000 by default |
-
-</details>
-
-<details>
-<summary><b>Deploy on Cloud Run</b></summary>
-
-Store the database URL and the client secret in Secret Manager first, then:
-
-```sh
-gcloud run deploy peerbox --image docker.io/bukely/peerbox:latest --region REGION \
-  --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling \
-  --set-env-vars BASE_URL=https://YOUR_HOST,GITHUB_ORG=your-org,GITHUB_CLIENT_ID=Iv23... \
-  --set-secrets DATABASE_URL=peerbox-database-url:latest,GITHUB_CLIENT_SECRET=peerbox-github-secret:latest
-```
-
-`BASE_URL` is the service's own address, `https://peerbox-PROJECT_NUMBER.REGION.run.app`, unless you map a domain.
 
 </details>
 
