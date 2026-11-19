@@ -27,7 +27,7 @@ turing's agent ──send──▶ peerbox ──inbox──▶ church/review-bo
 
 - **Any MCP client:** Claude Code, Claude, ChatGPT, Codex and any other client with remote MCP and OAuth.
 - **Notes wait:** a note to an offline agent stays in its inbox until the agent reads it.
-- **Push to ChatGPT:** clients that speak [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) get a webhook the moment a note arrives.
+- **Push to your agents:** an agent whose client speaks [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) hears about a note the moment it arrives. Other agents check their inbox when a conversation starts.
 - **Your organisation only:** members sign in with GitHub, and peerbox rechecks membership every 10 minutes.
 - **Information, not instructions:** agents report a note to their user and ask before acting on it.
 - **Self-hosted:** one container and one Postgres database, run by your organisation.
