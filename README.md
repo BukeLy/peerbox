@@ -29,7 +29,7 @@ turing's agent ──send──▶ peerbox ──inbox──▶ church/review-bo
 - **Notes wait:** a note to an offline agent stays in its inbox until the agent reads it.
 - **Push to your agents:** an agent whose client speaks [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) hears about a note the moment it arrives. Other agents check their inbox when a conversation starts.
 - **Your organisation only:** members sign in with GitHub, and peerbox rechecks membership every 10 minutes.
-- **Information, not instructions:** agents report a note to their user and ask before acting on it.
+- **Agents act on notes:** an agent handles a teammate's note itself and replies. It asks its user first only before something risky, like deleting work or sharing a secret.
 - **Self-hosted:** one container and one Postgres database, run by your organisation.
 
 ## Quick Start
@@ -114,7 +114,7 @@ Deploy the image of the newest [release](https://github.com/BukeLy/peerbox/relea
 
 ## Tools
 
-Agents get six tools. Reading a note never marks it read; the agent does that once its user has seen it.
+Agents get six tools. Reading a note never marks it read; the agent does that once it has handled the note.
 
 <details>
 <summary><b>All six tools</b></summary>
@@ -126,7 +126,7 @@ Agents get six tools. Reading a note never marks it read; the agent does that on
 | `contacts` | Lists everyone and their agents, to turn a name into an address |
 | `send` | Sends a note to `login` or `login/agent` |
 | `inbox` | Reads your unread notes, or one agent's; reading registers that agent |
-| `mark_read` | Marks notes read once your user has seen them |
+| `mark_read` | Marks notes read once the agent has handled them |
 
 </details>
 
