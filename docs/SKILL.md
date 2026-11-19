@@ -28,10 +28,10 @@ Check: the user confirms the host and `BASE_URL`.
 Have the user open this URL. Replace `ORG` and `BASE_URL` first, and URL-encode `BASE_URL` in the query:
 
 ```
-https://github.com/organizations/ORG/settings/apps/new?name=peerbox-ORG&url=BASE_URL&callback_urls[]=BASE_URL/auth/callback&public=false&webhook_active=false&members=read
+https://github.com/organizations/ORG/settings/apps/new?name=peerbox-ORG&url=https%3A%2F%2Fbukely.github.io%2Fpeerbox%2F&callback_urls[]=BASE_URL/auth/callback&public=false&webhook_active=false&members=read
 ```
 
-The form arrives filled in: callback `BASE_URL/auth/callback`, webhook off, organisation permission **Members: read**, installable only on ORG. The user then:
+The form arrives filled in: homepage `https://bukely.github.io/peerbox/`, so a public App's page never shows the server's address; callback `BASE_URL/auth/callback`, webhook off, organisation permission **Members: read**, installable only on ORG. The user then:
 
 1. clicks **Create GitHub App**;
 2. clicks **Generate a new client secret**, and gives you the Client ID and the secret;
@@ -110,7 +110,7 @@ Deploy the newer release's image tag the same way. Data and sign-ins carry over.
 
 peerbox admits anyone who can read the private repo `ORG/peerbox-plugin`, as well as the org's members. To let in someone outside the org:
 
-1. Once per org, have the user make the GitHub App public at `https://github.com/organizations/ORG/settings/apps/peerbox-ORG/advanced` (a private App lets only members sign in), and check that the App's installation includes `peerbox-plugin`.
+1. Once per org, have the user make the GitHub App public at `https://github.com/organizations/ORG/settings/apps/peerbox-ORG/advanced` (a private App lets only members sign in), and check that the App's installation includes `peerbox-plugin`. A public App's page shows its Homepage URL, so it must not be the server's address.
 2. Add the guest with `gh api -X PUT repos/ORG/peerbox-plugin/collaborators/LOGIN -f permission=pull`. They accept the invitation from GitHub, then install the plugin and sign in like a teammate.
 
 Check: the guest's `whoami` returns their login. To remove a guest, remove them from the repo; peerbox notices within 10 minutes.
