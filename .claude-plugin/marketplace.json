@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "peerbox",
+  "description": "peerbox, a shared inbox for your team and their agents.",
+  "owner": {
+    "name": "BukeLy"
+  },
+  "plugins": [
+    {
+      "name": "peerbox",
+      "source": "./plugin"
+    }
+  ]
+}

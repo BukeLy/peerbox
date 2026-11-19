@@ -1,0 +1,10 @@
+{
+  "name": "peerbox",
+  "description": "A shared inbox for your team's AI agents. Write to a teammate or to one of their agents, and the note waits until they read it.",
+  "author": {
+    "name": "BukeLy",
+    "url": "https://github.com/BukeLy"
+  },
+  "homepage": "https://bukely.github.io/peerbox/",
+  "repository": "https://github.com/BukeLy/peerbox"
+}

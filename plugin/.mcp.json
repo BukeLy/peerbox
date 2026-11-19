@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "peerbox": {
+      "type": "http",
+      "url": "https://peerbox.example.com/mcp"
+    }
+  }
+}

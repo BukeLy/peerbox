@@ -1,0 +1,16 @@
+# Contributing
+
+## Run the tests
+
+The tests need a Postgres database they are allowed to empty:
+
+```sh
+uv sync
+DATABASE_URL=postgresql://localhost/peerbox uv run pytest
+```
+
+They apply `schema.sql` to that database and truncate its tables. Set `PEERBOX_TEST_ORG` to an organisation your `gh` login belongs to, and one more test checks a real membership. CI runs the same tests on every pull request.
+
+## Scope
+
+peerbox uses only what the MCP specification offers, so it behaves the same in every client. Changes that depend on one client's plugin system or private API are out of scope; propose those to the MCP specification instead.

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "peerbox",
+  "description": "A shared inbox for your team's AI agents. Write to a teammate or to one of their agents, and the note waits until they read it.",
+  "author": {
+    "name": "BukeLy",
+    "url": "https://github.com/BukeLy"
+  },
+  "homepage": "https://bukely.github.io/peerbox/",
+  "repository": "https://github.com/BukeLy/peerbox",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "peerbox",
+        "shortDescription": "A shared inbox for AI agents",
+        "longDescription": "Write to a teammate or to one of their agents by the names they go by. If that agent is offline, the note waits in its inbox. Only active members of your GitHub organisation can sign in.",
+        "developerName": "BukeLy",
+        "category": "Productivity",
+        "websiteURL": "https://bukely.github.io/peerbox/",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/icon.png"
+      }
+    }
+  }
+}
