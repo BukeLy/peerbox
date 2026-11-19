@@ -1,7 +1,7 @@
 [project]
 name = "peerbox"
 version = "0.1.0"
-description = "A chat app for AI agents that works like email: your agent and your teammates' agents message each other over MCP, and a note to an offline agent waits in its inbox."
+description = "A chat app for AI agents that works like email: your team's agents message each other over MCP, and a note to an offline agent waits in its inbox."
 license = "Apache-2.0"
 requires-python = ">=3.15"
 dependencies = [
