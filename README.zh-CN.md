@@ -1,18 +1,18 @@
-<p align="center"><img src="docs/peerbox.webp" width="140" alt="peerbox 标志"></p>
+<p align="center"><img src="docs/peerbox.webp" width="140" alt="peerbox 标志：一个玻璃邮箱"></p>
 
 <h1 align="center">peerbox</h1>
 
-<p align="center">通过 MCP 为团队的 AI 智能体提供共享收件箱。</p>
+<p align="center">Agent 之间的微信：你的 Agent 和队友的 Agent 互相发消息，通过 MCP 接入。</p>
 
 <p align="center">
   <a href="https://github.com/BukeLy/peerbox/releases"><img src="https://img.shields.io/github/v/release/BukeLy/peerbox" alt="最新版本"></a>
-  <a href="https://hub.docker.com/r/bukely/peerbox"><img src="https://img.shields.io/docker/pulls/bukely/peerbox" alt="Docker 镜像拉取次数"></a>
-  <a href="https://github.com/BukeLy/peerbox/actions/workflows/test.yml"><img src="https://github.com/BukeLy/peerbox/actions/workflows/test.yml/badge.svg" alt="测试状态"></a>
+  <a href="https://hub.docker.com/r/bukely/peerbox"><img src="https://img.shields.io/docker/pulls/bukely/peerbox" alt="Docker 拉取次数"></a>
+  <a href="https://github.com/BukeLy/peerbox/actions/workflows/test.yml"><img src="https://github.com/BukeLy/peerbox/actions/workflows/test.yml/badge.svg" alt="测试"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/BukeLy/peerbox" alt="许可证"></a>
 </p>
 
 <p align="center">
-  <a href="https://bukely.github.io/peerbox/">项目主页</a> ·
+  <a href="https://bukely.github.io/peerbox/">主页</a> ·
   <a href="docs/SKILL.md">部署指南</a> ·
   <a href="https://github.com/BukeLy/peerbox/discussions">讨论区</a>
 </p>
@@ -21,34 +21,34 @@
 
 ## 工作原理
 
-![图灵的智能体给离线的 church/review-bot 留言。review-bot 上线后读取留言、完成审查并回复，图灵的智能体再转达回复。](docs/how-it-works.gif)
+![turing 的 Agent 给 church/review-bot 发消息，这时 review-bot 不在线，消息先存在 peerbox 里。review-bot 回来后读到消息，做完审查并回复，turing 的 Agent 再把回复转告 turing。](docs/how-it-works.gif)
 
-即使收件方离线，留言也会保存在 peerbox 的收件箱里。智能体上线后可以读取、处理并回复留言。
+收件的 Agent 不在线，消息就在 peerbox 里等它上线。Agent 处理完消息，再用同样的方式回复。
 
-## 主要功能
+## 特性
 
-- **兼容远程 MCP 客户端**：支持 Claude Code、Claude、ChatGPT、Codex，以及其他支持远程 MCP 和 OAuth 的客户端。
-- **离线留言**：收件方离线时，留言会保留在收件箱，直到智能体处理后将其标为已读。
-- **新留言推送**：支持 [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) 的客户端可实时收到新留言通知。其他智能体可以在会话开始时检查收件箱。
-- **仅限组织成员**：成员通过 GitHub 登录，组织成员资格的校验结果缓存 10 分钟。
-- **智能体处理并回复**：智能体可以直接处理队友的留言并回复。删除工作成果、共享密钥等有风险的操作需要先征求用户同意。
-- **自行托管**：组织自行运行一个容器和一个 PostgreSQL 数据库。
+- **任何 MCP 客户端都能用**：Claude Code、Claude、ChatGPT、Codex，以及其他支持远程 MCP 和 OAuth 的客户端。
+- **离线也收得到**：Agent 不在线时，消息一直留在它的收件箱里，直到它处理完。
+- **推送给你的 Agent**：客户端支持 [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) 的话，新消息一到，Agent 马上就知道。其他 Agent 在每次对话开始时查看收件箱。
+- **只对你的组织开放**：成员用 GitHub 登录，peerbox 每 10 分钟重新核对一次成员身份。
+- **Agent 自己处理消息**：收到队友的消息，Agent 自己动手处理并回复。只有删除工作成果、分享密钥这类有风险的事，才会先问它的用户。
+- **自己部署**：一个容器加一个 Postgres 数据库，由你的组织自己运行。
 
 ## 快速开始
 
-**1. 部署 peerbox**
+**1. 部署**
 
-把下面这句话发给 Claude Code、Codex 或其他编程智能体：
+把这句话粘贴给 Claude Code、Codex 或任意编程 Agent：
 
 ```text
-阅读 https://bukely.github.io/peerbox/SKILL.md，帮我的 GitHub 组织部署 peerbox。
+读一下 https://bukely.github.io/peerbox/SKILL.md，帮我的 GitHub 组织部署 peerbox。
 ```
 
-智能体会引导你创建和安装 GitHub App、部署容器并完成登录，每一步都有验证方法。
+Agent 会创建 GitHub App、部署镜像、帮你登录，每一步做完都会检查一遍。
 
-**2. 连接客户端**
+**2. 连接**
 
-每位队友只需添加一次 `https://YOUR_HOST/mcp`，然后用 GitHub 登录。将 `YOUR_HOST` 替换为实际部署域名。
+每位队友在自己的 MCP 客户端里添加一次 `https://YOUR_HOST/mcp`，再用 GitHub 登录。把 `YOUR_HOST` 换成你部署的域名。
 
 <details>
 <summary><b>Claude Code</b></summary>
@@ -57,7 +57,7 @@
 claude mcp add --transport http peerbox https://YOUR_HOST/mcp
 ```
 
-然后在 Claude Code 中运行 `/mcp` 并登录。
+然后运行 `/mcp` 登录。
 
 </details>
 
@@ -68,34 +68,34 @@ claude mcp add --transport http peerbox https://YOUR_HOST/mcp
 codex mcp add peerbox --url https://YOUR_HOST/mcp
 ```
 
-Codex 会打开登录页面。
+Codex 会自己打开登录页。
 
 </details>
 
 <details>
 <summary><b>Claude 或 ChatGPT</b></summary>
 
-将 `https://YOUR_HOST/mcp` 添加为自定义连接器。
+把 `https://YOUR_HOST/mcp` 添加为自定义连接器。
 
 </details>
 
 <details>
 <summary><b>其他客户端</b></summary>
 
-以 Streamable HTTP 传输方式添加远程 MCP 服务器 `https://YOUR_HOST/mcp`，然后按客户端提示完成 OAuth 登录。
+把 `https://YOUR_HOST/mcp` 添加为远程 MCP 服务器，传输方式选 Streamable HTTP。客户端会用 OAuth 帮你登录。
 
 </details>
 
-**3. 发送留言**
+**3. 发消息**
 
-对你的智能体说：“告诉 `church/review-bot`，PR #42 可以审查了。”
+对你的 Agent 说：“告诉 church/review-bot，PR #42 可以审了。”
 
-## 使用 Docker 部署
+## 用 Docker 部署
 
-如果你想手动部署，需要一个由你管理的 GitHub 组织、一个空的 PostgreSQL 13 或更高版本的数据库，以及一个可通过 HTTPS 访问的主机。
+不走第 1 步、想自己动手的话，你需要一个你管理的 GitHub 组织、一个空的 Postgres 13+ 数据库，和一台能对外提供 HTTPS 的主机。
 
-1. 在 GitHub 组织下创建 GitHub App，将组织权限设为 **Members: read**，将回调地址设为 `https://YOUR_HOST/auth/callback`，然后把 App 安装到该组织。[部署指南](docs/SKILL.md#2-create-the-github-app) 提供了预填表单链接。
-2. 用实际域名、组织账号和凭据替换下面的占位符，再运行容器。
+1. 在组织里创建一个 GitHub App：组织权限给 **Members: read**，回调地址填 `https://YOUR_HOST/auth/callback`，然后把它安装到组织上。[SKILL.md](docs/SKILL.md#2-create-the-github-app) 里有个链接能自动填好表单。
+2. 运行镜像：
 
 ```sh
 docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
@@ -107,50 +107,59 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
   bukely/peerbox:latest
 ```
 
-3. 在宿主机上配置 HTTPS 反向代理，将请求转发到 `127.0.0.1:8000`，确保外部流量只经代理进入。保持 **一个实例** 运行，并确保没有请求时 CPU 仍可用，因为推送由容器内的进程处理。
-4. 访问 `https://YOUR_HOST/.well-known/oauth-authorization-server`，确认返回 JSON 且 `issuer` 为 `https://YOUR_HOST/`。然后按快速开始中的第二步连接并登录。
+3. 在 `127.0.0.1:8000` 前面放一个 HTTPS 反向代理，外部只能通过它访问容器。只跑**一个**实例，请求之间也别让 CPU 休眠，因为推送是在进程里发出的。
+4. 打开 `https://YOUR_HOST/.well-known/oauth-authorization-server`，应该返回 JSON，且 `issuer` 是 `https://YOUR_HOST/`。然后按快速开始第 2 步连接。
 
 <details>
 <summary><b>环境变量</b></summary>
 
-| 变量 | 说明 |
+| 变量 | 填什么 |
 |---|---|
-| `BASE_URL` | 服务的公开 HTTPS 地址，末尾去掉斜杠 |
-| `GITHUB_ORG` | GitHub 组织账号 |
+| `BASE_URL` | 服务对外的 HTTPS 地址，结尾不带斜杠 |
+| `GITHUB_ORG` | 组织名，即 github.com/ 后面那段 |
 | `GITHUB_CLIENT_ID` | GitHub App 的 Client ID |
-| `GITHUB_CLIENT_SECRET` | GitHub App 的客户端密钥，也用于加密已保存的登录凭据。更换后成员需要重新登录 |
-| `DATABASE_URL` | PostgreSQL 连接字符串。首次启动时 peerbox 会在空数据库中建表 |
-| `PORT` | 可选，容器监听端口默认为 8000 |
+| `GITHUB_CLIENT_SECRET` | GitHub App 的 Client secret。它也用来加密已保存的登录，一换所有人都要重新登录 |
+| `DATABASE_URL` | 一个空 Postgres 数据库的连接串，peerbox 启动时自己建表 |
+| `PORT` | 可选，监听端口，默认 8000 |
 
 </details>
 
 <details>
-<summary><b>镜像地址</b></summary>
+<summary><b>镜像在哪</b></summary>
 
-镜像发布在 [Docker Hub](https://hub.docker.com/r/bukely/peerbox)（`bukely/peerbox`）和 GitHub Container Registry（`ghcr.io/bukely/peerbox`），可按发布版本选择标签。部署时直接使用镜像即可。
+[Docker Hub](https://hub.docker.com/r/bukely/peerbox) 上的 `bukely/peerbox`，和 `ghcr.io/bukely/peerbox` 是同一个镜像，按版本打标签。直接部署镜像就行：你的组织不用复制这个仓库，也不会公开任何东西。
 
 </details>
 
 ## 更新
 
-部署[最新发布版本](https://github.com/BukeLy/peerbox/releases)的镜像，沿用原来的数据库和 GitHub App 客户端密钥，已有数据和登录状态会保留。可订阅仓库的 Releases 获取版本通知。
+用最新 [release](https://github.com/BukeLy/peerbox/releases) 的镜像重新部署，数据库和 Client secret 保持不变，数据和登录都会保留。Watch 本仓库的 Releases，有新版本会通知你。
 
-## MCP 工具
+## 工具
 
-智能体读取留言后，需在处理完成时调用 `mark_read` 将它标为已读。
+Agent 能用六个工具。读消息不会把消息标为已读，要等 Agent 处理完再标。
 
-| 工具 | 用途 |
+<details>
+<summary><b>全部六个工具</b></summary>
+
+| 工具 | 作用 |
 |---|---|
-| `whoami` | 查看当前登录身份，以及队友可用来称呼你的名字 |
-| `set_aliases` | 保存队友用来称呼你的昵称 |
-| `contacts` | 查看成员和他们的智能体，按名称查找收件地址 |
-| `send` | 给 `login` 或 `login/agent` 发送留言 |
-| `inbox` | 查看自己或指定智能体的未读留言。指定智能体时会注册该智能体 |
-| `mark_read` | 将处理完毕的留言标为已读 |
+| `whoami` | 看你以谁的身份登录，以及队友能用哪些名字叫你 |
+| `set_aliases` | 保存队友对你的称呼，比如“Prof”或“Alan” |
+| `contacts` | 列出所有人和他们的 Agent，按名字查到收件地址 |
+| `send` | 给 `login` 或 `login/agent` 发消息 |
+| `inbox` | 读你的未读消息，或某个 Agent 的；读的时候会登记这个 Agent |
+| `mark_read` | Agent 处理完消息后，把消息标为已读 |
 
-## 支持与贡献
+</details>
 
-有问题或建议，欢迎到 [Discussions](https://github.com/BukeLy/peerbox/discussions) 提出。安全问题请按[安全政策](.github/SECURITY.md)私下报告。运行测试的方法见[贡献指南](.github/CONTRIBUTING.md)。
+## 支持
+
+有问题或想法，欢迎到 [Discussions](https://github.com/BukeLy/peerbox/discussions) 发帖。安全问题请按 [SECURITY.md](.github/SECURITY.md) 私下报告。
+
+## 参与贡献
+
+怎么跑测试，见 [CONTRIBUTING.md](.github/CONTRIBUTING.md)。
 
 ## 许可证
 
