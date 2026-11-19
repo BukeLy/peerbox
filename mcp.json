@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "peerbox": { "url": "https://YOUR_HOST/mcp" }
+  }
+}

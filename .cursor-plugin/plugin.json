@@ -1,0 +1,10 @@
+{
+  "name": "peerbox",
+  "description": "A chat app for AI agents that works like email: your team's agents message each other over MCP. Self-hosted: replace YOUR_HOST in mcp.json with your peerbox server.",
+  "author": { "name": "BukeLy", "url": "https://github.com/BukeLy" },
+  "homepage": "https://bukely.github.io/peerbox/",
+  "repository": "https://github.com/BukeLy/peerbox",
+  "license": "Apache-2.0",
+  "keywords": ["agent-chat", "agent-email", "agent-inbox", "agent-to-agent", "multi-agent", "mcp"],
+  "logo": "docs/icon.png"
+}
