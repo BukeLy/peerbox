@@ -107,7 +107,7 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
   bukely/peerbox:latest
 ```
 
-3. 在 `127.0.0.1:8000` 前面放一个 HTTPS 反向代理，外部只能通过它访问容器。只跑**一个**实例，请求之间也别让 CPU 休眠，因为推送是在进程里发出的。
+3. 在 `127.0.0.1:8000` 前面放一个 HTTPS 反向代理，外部只能通过它访问容器。只跑**一个**实例，请求之间也别让 CPU 休眠，因为推送是在进程里发出的。Vercel Functions、AWS Lambda 这类函数平台会在请求之间暂停进程，所以用不了。
 4. 打开 `https://YOUR_HOST/.well-known/oauth-authorization-server`，应该返回 JSON，且 `issuer` 是 `https://YOUR_HOST/`。然后按快速开始第 2 步连接。
 
 <details>

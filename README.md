@@ -101,7 +101,7 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
   bukely/peerbox:latest
 ```
 
-3. Put an HTTPS reverse proxy in front of `127.0.0.1:8000`, and make it the only way in. Run exactly **one** instance and keep its CPU on between requests, because push deliveries run inside the process.
+3. Put an HTTPS reverse proxy in front of `127.0.0.1:8000`, and make it the only way in. Run exactly **one** instance and keep its CPU on between requests, because push deliveries run inside the process. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, so they don't fit.
 4. Check that `https://YOUR_HOST/.well-known/oauth-authorization-server` returns JSON whose `issuer` is `https://YOUR_HOST/`. Then connect as in step 2 of Quick Start.
 
 <details>

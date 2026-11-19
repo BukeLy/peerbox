@@ -9,14 +9,22 @@ Work through the steps in order. Each one ends on a check; do not start the next
 
 The organisation deploys the released image, so nothing about it becomes public. You need an owner of the org, for the GitHub App, and the CLI of the container host.
 
-## 1. Settle the public URL
+## 1. Choose the host and the public URL
 
-Choose the HTTPS origin the server will answer on before anything else, because the GitHub App's callback depends on it. Call it `BASE_URL`, with no trailing slash.
+Ask the user where the server will run. Any host fits that gives:
+
+- exactly one instance, never scaled to zero or past one, with CPU running between requests, because webhook deliveries run inside the process;
+- HTTPS terminated in front of the container, with no other way to reach it;
+- a Postgres 13 or newer that it can reach.
+
+Cloud Run with the settings in step 4 fits, and so does a VM running Docker behind a TLS proxy. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, which stops push; if the user names one, explain this and suggest a host that fits.
+
+Then settle the HTTPS origin the server will answer on, before anything else, because the GitHub App's callback depends on it. Call it `BASE_URL`, with no trailing slash.
 
 - Cloud Run: `https://peerbox-PROJECT_NUMBER.REGION.run.app`. Get the number with `gcloud projects describe PROJECT --format='value(projectNumber)'`.
 - Anything else: the domain the user will point at the server.
 
-Check: the user confirms `BASE_URL`.
+Check: the user confirms the host and `BASE_URL`.
 
 ## 2. Create the GitHub App
 
@@ -38,7 +46,13 @@ Check: the Client ID starts with `Iv`, and the user has installed the App on ORG
 
 ## 3. Prepare Postgres
 
-Create an empty database on any Postgres 13 or newer that the host can reach. peerbox creates its tables when it starts.
+Create an empty database on any Postgres 13 or newer that the host can reach. peerbox creates its tables when it starts. Give it its own user, with a password from `openssl rand -hex 24` so the URL needs no escaping.
+
+On Cloud SQL with Cloud Run, the server reaches the database through the Cloud SQL socket, so the URL has no host:
+
+```
+postgresql://USER:PASSWORD@/DATABASE?host=/cloudsql/PROJECT:REGION:INSTANCE
+```
 
 Check: you have its `DATABASE_URL`.
 
@@ -50,11 +64,7 @@ Deploy the image `docker.io/bukely/peerbox:VERSION` from Docker Hub; `ghcr.io/bu
 gh release view -R BukeLy/peerbox --json tagName -q .tagName
 ```
 
-The container listens on `$PORT`, or 8000 when `PORT` is unset. The host must meet three conditions:
-
-- exactly one instance, never scaled to zero or past one, because webhook deliveries run inside the process;
-- CPU kept running between requests, for the same reason;
-- HTTPS terminated in front of the container, with no other way to reach it.
+The container listens on `$PORT`, or 8000 when `PORT` is unset. Run it as step 1 requires: one instance, CPU always on, HTTPS in front.
 
 Set these environment variables. Keep the last two in the host's secret store:
 
@@ -66,14 +76,25 @@ Set these environment variables. Keep the last two in the host's secret store:
 | `DATABASE_URL` | from step 3 |
 | `GITHUB_CLIENT_SECRET` | from step 2; it also encrypts the stored sign-ins, so changing it signs everyone out |
 
-On Cloud Run, after storing the two secrets in Secret Manager:
+On Cloud Run:
 
-```sh
-gcloud run deploy peerbox --image docker.io/bukely/peerbox:VERSION --region REGION \
-  --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling \
-  --set-env-vars BASE_URL=BASE_URL,GITHUB_ORG=ORG,GITHUB_CLIENT_ID=CLIENT_ID \
-  --set-secrets DATABASE_URL=peerbox-database-url:latest,GITHUB_CLIENT_SECRET=peerbox-github-secret:latest
-```
+1. Cloud Run cannot pull from ghcr.io, and its Docker Hub cache does not hold this image. Proxy Docker Hub through an Artifact Registry remote repository, once per project:
+
+   ```sh
+   gcloud artifacts repositories create peerbox --location REGION \
+     --repository-format docker --mode remote-repository --remote-docker-repo docker-hub
+   ```
+
+2. Store the two secrets in Secret Manager as `peerbox-database-url` and `peerbox-github-secret`.
+3. Deploy. Leave out `--add-cloudsql-instances` when the database is not on Cloud SQL:
+
+   ```sh
+   gcloud run deploy peerbox --image REGION-docker.pkg.dev/PROJECT/peerbox/bukely/peerbox:VERSION --region REGION \
+     --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling \
+     --add-cloudsql-instances PROJECT:REGION:INSTANCE \
+     --set-env-vars BASE_URL=BASE_URL,GITHUB_ORG=ORG,GITHUB_CLIENT_ID=CLIENT_ID \
+     --set-secrets DATABASE_URL=peerbox-database-url:latest,GITHUB_CLIENT_SECRET=peerbox-github-secret:latest
+   ```
 
 Check: `curl -fsS BASE_URL/.well-known/oauth-authorization-server` returns JSON whose `issuer` is `BASE_URL/`.
 
