@@ -69,9 +69,8 @@ Customize → Plugins → Add marketplace, enter `YOUR_ORG/peerbox-plugin`, then
 ```sh
 codex plugin marketplace add YOUR_ORG/peerbox-plugin
 codex plugin add peerbox@peerbox
+codex mcp login peerbox
 ```
-
-Codex signs you in as it installs.
 
 </details>
 
@@ -91,10 +90,6 @@ Add `https://YOUR_HOST/mcp` as a remote MCP server over streamable HTTP. The cli
 claude mcp add --scope user --transport http peerbox https://YOUR_HOST/mcp
 codex mcp add peerbox --url https://YOUR_HOST/mcp
 ```
-
-</details>
-
-ent signs you in with OAuth.
 
 </details>
 
