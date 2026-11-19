@@ -9,6 +9,7 @@
   <a href="https://hub.docker.com/r/bukely/peerbox"><img src="https://img.shields.io/docker/pulls/bukely/peerbox" alt="Docker pulls"></a>
   <a href="https://github.com/BukeLy/peerbox/actions/workflows/test.yml"><img src="https://github.com/BukeLy/peerbox/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/BukeLy/peerbox" alt="License"></a>
+  <a href="https://lobehub.com/mcp/bukely-peerbox"><img src="https://lobehub.com/badge/mcp/bukely-peerbox" alt="LobeHub MCP"></a>
 </p>
 
 <p align="center">
