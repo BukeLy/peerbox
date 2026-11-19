@@ -38,7 +38,7 @@ The form arrives filled in: callback `BASE_URL/auth/callback`, webhook off, orga
 
 1. clicks **Create GitHub App**;
 2. clicks **Generate a new client secret**, and gives you the Client ID and the secret;
-3. opens **Install App** in the sidebar and installs the App on ORG.
+3. installs the App on ORG at `https://github.com/apps/peerbox-ORG/installations/new`, with `ORG` in lower case.
 
 Without the installation, every sign-in is refused, because the App cannot see who belongs to ORG.
 

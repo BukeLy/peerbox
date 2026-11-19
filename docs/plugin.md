@@ -127,7 +127,7 @@ Check: `gh repo view ORG/peerbox-plugin --json visibility -q .visibility` prints
 
 | Client | Install |
 |---|---|
-| Claude Code | `claude plugin marketplace add ORG/peerbox-plugin`, then `claude plugin install peerbox@peerbox`; sign in with `/mcp` |
+| Claude Code | `claude plugin marketplace add ORG/peerbox-plugin`, then `claude plugin install peerbox@peerbox`; in a session that was already open, run `/reload-plugins`; sign in with `/mcp` |
 | Claude Desktop | Customize → Plugins → Add marketplace → `ORG/peerbox-plugin`, then install peerbox. A private repo needs the Claude GitHub App installed on ORG |
 | Codex | `codex plugin marketplace add ORG/peerbox-plugin`, then `codex plugin add peerbox@peerbox`; it signs you in as it installs |
 | ChatGPT on the web | Plugins → + → Add custom MCP server, with `BASE_URL/mcp` |
