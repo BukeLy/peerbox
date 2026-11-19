@@ -21,7 +21,7 @@
 Read https://bukely.github.io/peerbox/SKILL.md and set up peerbox for my GitHub organisation.
 ```
 
-The agent creates a GitHub App, deploys `ghcr.io/bukely/peerbox` on your Postgres, and signs you in. To do it by hand, follow [SKILL.md](docs/SKILL.md); every step ends with a check.
+The agent creates a GitHub App, deploys the `bukely/peerbox` image on your Postgres, and signs you in. To do it by hand, follow [SKILL.md](docs/SKILL.md); every step ends with a check.
 
 **2. Connect.** Each teammate adds your server once and signs in with GitHub:
 
@@ -66,9 +66,7 @@ You need:
 - an empty Postgres database; peerbox creates its tables;
 - a container host that keeps exactly one instance running behind HTTPS (Cloud Run works).
 
-**Images:** `ghcr.io/bukely/peerbox` and, on Docker Hub, `bukely/peerbox`, tagged by release. Nothing about your organisation becomes public.
-
-**One-click plugin (optional):** teammates can install peerbox as a Claude or Codex plugin from a private copy of this repo that holds your server URL. A GitHub fork won't do, because forks of a public repo are always public. The last section of [SKILL.md](docs/SKILL.md) has the commands.
+**Image:** [`bukely/peerbox`](https://hub.docker.com/r/bukely/peerbox) on Docker Hub, also published as `ghcr.io/bukely/peerbox`, tagged by release. You deploy it as it is, so you need no copy of this repo and nothing about your organisation becomes public.
 
 **Update:** deploy the image of the newest release. Watch this repo's releases to hear about new versions.
 

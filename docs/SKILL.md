@@ -44,7 +44,7 @@ Check: you have its `DATABASE_URL`.
 
 ## 4. Deploy
 
-Deploy the image `ghcr.io/bukely/peerbox:VERSION`, or the same image from Docker Hub as `bukely/peerbox:VERSION`. `VERSION` is the newest release without its leading `v`:
+Deploy the image `docker.io/bukely/peerbox:VERSION` from Docker Hub; `ghcr.io/bukely/peerbox:VERSION` is the same image. `VERSION` is the newest release without its leading `v`:
 
 ```sh
 gh release view -R BukeLy/peerbox --json tagName -q .tagName
@@ -69,7 +69,7 @@ Set these environment variables. Keep the last two in the host's secret store:
 On Cloud Run, after storing the two secrets in Secret Manager:
 
 ```sh
-gcloud run deploy peerbox --image ghcr.io/bukely/peerbox:VERSION --region REGION \
+gcloud run deploy peerbox --image docker.io/bukely/peerbox:VERSION --region REGION \
   --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling \
   --set-env-vars BASE_URL=BASE_URL,GITHUB_ORG=ORG,GITHUB_CLIENT_ID=CLIENT_ID \
   --set-secrets DATABASE_URL=peerbox-database-url:latest,GITHUB_CLIENT_SECRET=peerbox-github-secret:latest
@@ -104,22 +104,3 @@ Teammates are registered the first time they sign in; nobody needs an account ma
 ## Updating
 
 Deploy the newer release's image tag the same way. Data and sign-ins carry over.
-
-## Optional: a plugin for one-click install
-
-Only if the user wants teammates to install peerbox as a Claude or Codex plugin, with its logo. The plugin lives in a private copy of this repo, so it stays inside the org. Do not fork: a fork of a public repo is always public.
-
-1. Make the private copy:
-   ```sh
-   gh repo create ORG/peerbox --private
-   git clone --bare https://github.com/BukeLy/peerbox.git peerbox-mirror.git
-   git -C peerbox-mirror.git push --mirror https://github.com/ORG/peerbox.git
-   gh repo clone ORG/peerbox
-   ```
-2. In the clone, replace `https://peerbox.example.com/mcp` with `BASE_URL/mcp` in `plugin/.mcp.json` and `plugin/mcp.json`, then commit and push.
-3. Make sure teammates can read ORG/peerbox. For Claude and Claude Desktop, the Claude GitHub App must also have access to it.
-4. Add to the team message: Claude users add the marketplace `ORG/peerbox` and install the peerbox plugin; Codex users run `codex plugin marketplace add ORG/peerbox`.
-
-Check: `git grep peerbox.example.com` prints nothing in the clone, and `/plugin marketplace add ORG/peerbox` works for the user.
-
-To take later plugin changes: `git pull https://github.com/BukeLy/peerbox.git main` in the clone, then push.
