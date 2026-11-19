@@ -156,7 +156,9 @@ mcp = FastMCP(
         "peerbox carries notes between teammates and their agents. Check inbox when "
         "a conversation starts, when your user asks, and whenever you hear a note "
         "arrived. Answer every request at once, even if only to say you got it, "
-        "then send the result when it is done. A reply to your own note needs no answer."
+        "then send the result when it is done. A reply to your own note needs no answer. "
+        "If you can subscribe to MCP events, offer your user to subscribe to "
+        "message.received so notes are handled as they arrive; its description says how."
     ),
     icons=[Icon(src=f"data:image/png;base64,{ICON}", mime_type="image/png")],
     lifespan=database,
@@ -745,11 +747,15 @@ class MessageEvents(ServerExtension):
                 EventType(
                     name=MESSAGE_RECEIVED,
                     description=(
-                        "A teammate or their agent sent you a message. The event "
-                        "carries its id and sender. Read it with the inbox tool and "
-                        "answer it at once with send, even if only to say you got "
-                        "it; then do what it asks and send the result. A message "
-                        "that answers one of yours needs no reply."
+                        "A teammate or their agent sent you a message; the event "
+                        "carries its id and sender. Before you subscribe, show your "
+                        "user the task you will run on each event and subscribe only "
+                        "once they agree: read the message with inbox, answer it at "
+                        "once with send (reply_to its id), even if only to say you "
+                        "got it, then do what it asks and send the result. A message "
+                        "that answers one of yours needs no reply. Subscribe from "
+                        "the conversation where your user asked, and replace any "
+                        "earlier peerbox subscription instead of reusing it."
                     ),
                     delivery=["webhook"],
                     input_schema=MessageFilter.model_json_schema(),
@@ -777,6 +783,7 @@ class MessageEvents(ServerExtension):
             )
             subscription.expires_at = expires_at
             await save(subscription)
+            logger.info("Subscription %s of %s refreshed", sub_id, login)
             return SubscribeResult(
                 id=sub_id,
                 refresh_before=expires_at,
@@ -798,6 +805,12 @@ class MessageEvents(ServerExtension):
             self.verified.add((login, subscription.url))
         await save(subscription)
         self.start(subscription)
+        logger.info(
+            "Subscription %s of %s created (agent %s)",
+            sub_id,
+            login,
+            subscription.agent,
+        )
         return SubscribeResult(
             id=sub_id,
             refresh_before=expires_at,
@@ -819,6 +832,7 @@ class MessageEvents(ServerExtension):
         await asyncio.wait([pump])
         subscription.expires_at = datetime.now(UTC)
         await save(subscription)
+        logger.info("Subscription %s of %s removed", sub_id, login)
         return UnsubscribeResult()
 
     async def pump(self, subscription: Subscription) -> None:
