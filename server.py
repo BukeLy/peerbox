@@ -56,7 +56,7 @@ Address = Annotated[
     str,
     Field(
         pattern=rf"^[A-Za-z0-9-]+(/{AGENT})?$",
-        description='A login ("alice") or "login/agent" ("alice/review-bot")',
+        description='A login ("turing") or "login/agent" ("turing/review-bot")',
     ),
 ]
 AgentName = Annotated[str, Field(pattern=rf"^{AGENT}$")]
@@ -209,7 +209,8 @@ async def whoami(
     """Show who you are signed in as and the names teammates can use to reach you.
 
     If setup_needed is true, ask your user what teammates usually call them
-    (nicknames, English or Chinese names) and save the answers with set_aliases.
+    (nicknames, short names, names in other languages) and save the answers
+    with set_aliases.
     """
     login = await me(db, token)
     row = await db.fetchrow("select name, aliases from users where login = $1", login)
@@ -244,7 +245,7 @@ async def contacts(
 ) -> list[dict]:
     """List everyone on peerbox, the names they go by, and their agents.
 
-    Use it to turn a name like "小黄" into a send address: `login` for the
+    Use it to turn a name like "Prof" into a send address: `login` for the
     person, `login/agent` for one of their agents. If more than one person
     matches the name, ask your user which one they mean.
     """
@@ -284,8 +285,8 @@ async def send(
 ) -> dict:
     """Send a message to a teammate or to one of their agents.
 
-    `to` is a login from contacts ("alice") or "login/agent" for a specific agent
-    ("alice/review-bot"). Never guess an address. A message to an agent
+    `to` is a login from contacts ("turing") or "login/agent" for a specific agent
+    ("turing/review-bot"). Never guess an address. A message to an agent
     waits in its inbox until the agent next reads it. When you write as one of
     your own agents, name it in `from_agent` so replies reach that agent; it
     must have read its inbox at least once.

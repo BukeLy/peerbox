@@ -144,7 +144,6 @@ html { scrollbar-color: var(--faint) var(--paper); }
 .glass:hover::after { opacity: 1; }
 
 h2 { margin: 0 0 18px; font-size: clamp(40px, 4.4vw, 62px); font-weight: 700; line-height: 1; letter-spacing: -0.025em; }
-.intro { margin: 0; max-width: 34em; color: var(--soft); font-size: 19px; }
 
 /* nav */
 .nav {
@@ -207,10 +206,6 @@ h1 .line > span { display: block; }
 .lede { margin: 0 0 28px; max-width: 31em; color: var(--soft); font-size: 19px; line-height: 1.55; }
 
 .install { max-width: 560px; }
-.field { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 22px; }
-/* the prompt reads as a sentence above its button, like a message waiting to be sent */
-.field .btn { align-self: flex-end; }
-.field code { flex: 1; min-width: 0; padding: 11px 12px; font: 14px/1.5 var(--mono); overflow-wrap: anywhere; }
 .btn {
   min-height: 46px; padding: 0 20px; border: 1px solid transparent; border-radius: 16px;
   background: var(--button); color: var(--button-ink); font: 600 15px/1 var(--text); white-space: nowrap; cursor: pointer;
@@ -323,9 +318,6 @@ h1 .line > span { display: block; }
 }
 .sign-off { margin: 0; }
 .sign-off .glass-word { width: min(760px, 88vw); margin: 0 auto; }
-.closing-inner { position: relative; display: grid; justify-items: center; gap: 22px; margin-top: 36px; }
-.closing .intro { text-align: center; }
-.closing .field { width: min(560px, 100%); text-align: left; }
 footer { display: flex; justify-content: space-between; gap: 24px; padding: 28px 0 48px; color: var(--faint); font-size: 15px; }
 footer span { max-width: 60ch; }
 
@@ -350,9 +342,9 @@ footer span { max-width: 60ch; }
   @keyframes bob { 50% { translate: 0 -12px; } }
   @keyframes breathe { 50% { opacity: 0.7; } }
   /* the safety rules and the closing line come into focus as they scroll in, like the story's captions */
-  .reveal :is(.rules li > *, .closing .intro) { transition: opacity 0.9s var(--ease), filter 0.9s var(--ease), translate 0.9s var(--ease); }
-  .reveal :is(.rules p, .closing .intro) { transition-delay: 0.12s; }
-  .reveal :is(.rules li > *, .closing .intro):not(.in) { opacity: 0; filter: blur(8px); translate: 0 16px; }
+  .reveal .rules li > * { transition: opacity 0.9s var(--ease), filter 0.9s var(--ease), translate 0.9s var(--ease); }
+  .reveal .rules p { transition-delay: 0.12s; }
+  .reveal .rules li > *:not(.in) { opacity: 0; filter: blur(8px); translate: 0 16px; }
   /* the sign-off only rises out of the page: a fade or blur over its SVG shadows stalls Safari for several frames */
   .reveal .sign-off { transition: translate 1.2s var(--ease); }
   .reveal .sign-off:not(.in) { translate: 0 48px; }
@@ -444,8 +436,8 @@ footer span { max-width: 60ch; }
         <p class="lede fade d2">peerbox is a shared inbox for your team's AI agents. Write to a teammate or to one of their agents. If that agent is offline, the note waits and arrives when it is back.</p>
       </div>
       <div class="install fade d3">
-          <div class="field glass"><code class="prompt" id="prompt"></code><button class="btn" id="copy" type="button"><span>Copy for your agent</span></button></div>
-          <p class="hint">Paste it into Claude Code, Codex or any coding agent. Your teammates then sign in with GitHub.</p>
+          <button class="btn" id="copy" type="button"><span>Copy for your agent</span></button>
+          <p class="hint">Copies one line for Claude Code, Codex or any coding agent. It follows <a href="SKILL.md">SKILL.md</a> to set up peerbox for your GitHub organisation.</p>
           <p class="sr" role="status" id="copy-status"></p>
       </div>
     </div>
@@ -522,10 +514,6 @@ footer span { max-width: 60ch; }
         </g>
       </svg>
     </span></h2>
-    <div class="wrap closing-inner">
-      <div class="field glass"><code class="prompt" id="prompt-end"></code><button class="btn" id="copy-end" type="button"><span>Copy for your agent</span></button></div>
-      <p class="intro">One sentence is all it takes: your agent reads the setup guide and runs peerbox for your organisation.</p>
-    </div>
   </section>
 </main>
 
@@ -539,14 +527,8 @@ const $ = (s, el = document) => el.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const motion = document.documentElement.classList.contains("motion");
 
-// the link wraps after a slash, never inside a word; <wbr> adds nothing to the copied text
-function breakable(el, text) {
-  el.replaceChildren(...text.split(/(?<=\/)/).flatMap((part, i) => (i ? [document.createElement("wbr"), part] : [part])));
-}
-
 // the prompt names the SKILL.md published beside this page, so it stays right on any host
 const prompt = `Read ${new URL("SKILL.md", location.href)} and set up peerbox for my GitHub organisation.`;
-for (const el of document.querySelectorAll(".prompt")) breakable(el, prompt);
 
 // Two motions ported from beUI (MIT, (c) 2026 Saurabh Chauhan, github.com/starc007/ui-components)
 const easeOut = "cubic-bezier(0.16, 1, 0.3, 1)";
@@ -583,16 +565,15 @@ fetch("https://api.github.com/repos" + new URL(gh.href).pathname)
   .then((repo) => { stars.hidden = false; countUp($("b", stars), repo.stargazers_count); })
   .catch(() => {});
 const status = $("#copy-status");
-for (const [button, source] of [[$("#copy"), $("#prompt")], [$("#copy-end"), $("#prompt-end")]]) {
-  const label = button.textContent.trim();
+{
+  const button = $("#copy"), label = button.textContent.trim();
   let timer;
   button.addEventListener("click", async () => {
     let msg = "Copied";
     try {
-      await navigator.clipboard.writeText(source.textContent);
+      await navigator.clipboard.writeText(prompt);
     } catch {
-      getSelection().selectAllChildren(source);
-      msg = "Copy failed";
+      msg = "Copy failed"; // the hint still links SKILL.md
     }
     swapLabel(button, msg);
     // a trailing space makes screen readers repeat an identical message
@@ -627,7 +608,7 @@ if (motion) {
   const seen = new IntersectionObserver((entries) => {
     for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); seen.unobserve(e.target); }
   }, { rootMargin: "0px 0px -15% 0px" });
-  document.querySelectorAll(".rules li > *, .sign-off, .closing .intro").forEach((el) => seen.observe(el));
+  document.querySelectorAll(".rules li > *, .sign-off").forEach((el) => seen.observe(el));
   // the note's journey, driven by scroll through the pinned stage
   const stage = $(".stage"), inner = $(".stage-inner"), route = $(".route");
   const fromNode = $(".node.from"), toNode = $(".node.to"), boxArt = $(".box-art");
