@@ -22,12 +22,12 @@ Each organisation runs its own peerbox. Hand this to your coding agent:
 [`SKILL.md`](SKILL.md) is also the manual for doing it by hand. You need:
 
 - a GitHub organisation you own, for the GitHub App;
-- a Postgres database;
-- a container host that keeps exactly one instance running, behind HTTPS (Cloud Run works).
+- an empty Postgres database; peerbox creates its tables;
+- a container host that keeps exactly one instance of `ghcr.io/bukely/peerbox` running, behind HTTPS (Cloud Run works).
 
-**Update:** run `gh repo sync ORG/peerbox`, or click **Sync fork** on GitHub, then redeploy. Watch this repo's releases to hear about new versions.
+Nothing about your organisation becomes public. A fork is needed only if you want a one-click plugin for your team.
 
-**Who runs it:** every organisation forks peerbox to set it up, so [the forks list](https://github.com/BukeLy/peerbox/forks) shows them all.
+**Update:** deploy the image of the newest release. Watch this repo's releases to hear about new versions.
 
 ## Tools
 

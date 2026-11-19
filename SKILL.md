@@ -1,23 +1,15 @@
 ---
 name: peerbox-setup
-description: Sets up a self-hosted peerbox server for a GitHub organisation. It forks the repo, creates the GitHub App, prepares Postgres, deploys the container and connects the first client. Use when someone asks to install, deploy or self-host peerbox.
+description: Sets up a self-hosted peerbox server for a GitHub organisation. It creates the GitHub App, deploys the released container image with Postgres, and connects the first client. Use when someone asks to install, deploy or self-host peerbox.
 ---
 
 # Set up peerbox for an organisation
 
 Work through the steps in order. Each one ends on a check; do not start the next step until it passes. Ask the user for every value you cannot look up: the org, the host, the region.
 
-You need: `gh` signed in as an owner of the org, `psql`, and the CLI of the container host.
+The organisation deploys the released image, so nothing about it becomes public. You need an owner of the org, for the GitHub App, and the CLI of the container host.
 
-## 1. Fork
-
-```sh
-gh repo fork BukeLy/peerbox --org ORG --clone && cd peerbox
-```
-
-Check: `git remote get-url origin` points at `ORG/peerbox`.
-
-## 2. Settle the public URL
+## 1. Settle the public URL
 
 Choose the HTTPS origin the server will answer on before anything else, because the GitHub App's callback depends on it. Call it `BASE_URL`, with no trailing slash.
 
@@ -26,7 +18,7 @@ Choose the HTTPS origin the server will answer on before anything else, because 
 
 Check: the user confirms `BASE_URL`.
 
-## 3. Create the GitHub App
+## 2. Create the GitHub App
 
 Have the user open this URL. Replace `ORG` and `BASE_URL` first, and URL-encode `BASE_URL` in the query:
 
@@ -44,19 +36,21 @@ Without the installation, every sign-in is refused, because the App cannot see w
 
 Check: the Client ID starts with `Iv`, and the user has installed the App on ORG.
 
-## 4. Prepare Postgres
+## 3. Prepare Postgres
 
-Any Postgres 13 or newer works. Create an empty database and apply the schema:
+Create an empty database on any Postgres 13 or newer that the host can reach. peerbox creates its tables when it starts.
+
+Check: you have its `DATABASE_URL`.
+
+## 4. Deploy
+
+Deploy the image `ghcr.io/bukely/peerbox:VERSION`, where `VERSION` is the newest release without its leading `v`:
 
 ```sh
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f schema.sql
+gh release view -R BukeLy/peerbox --json tagName -q .tagName
 ```
 
-Check: `psql "$DATABASE_URL" -c '\dt'` lists `users`, `agents`, `messages`, `oauth_state` and `event_subscriptions`.
-
-## 5. Deploy
-
-Build the container from the repo's `Dockerfile`, or, on a host that runs prebuilt images, use the released `ghcr.io/bukely/peerbox:VERSION`. It listens on `$PORT`, or 8000 when `PORT` is unset. The host must meet three conditions:
+The container listens on `$PORT`, or 8000 when `PORT` is unset. The host must meet three conditions:
 
 - exactly one instance, never scaled to zero or past one, because webhook deliveries run inside the process;
 - CPU kept running between requests, for the same reason;
@@ -66,30 +60,24 @@ Set these environment variables. Keep the last two in the host's secret store:
 
 | Variable | Value |
 |---|---|
-| `BASE_URL` | from step 2 |
+| `BASE_URL` | from step 1 |
 | `GITHUB_ORG` | the org's login |
-| `GITHUB_CLIENT_ID` | from step 3 |
-| `DATABASE_URL` | from step 4 |
-| `GITHUB_CLIENT_SECRET` | from step 3; it also encrypts the stored sign-ins, so changing it signs everyone out |
+| `GITHUB_CLIENT_ID` | from step 2 |
+| `DATABASE_URL` | from step 3 |
+| `GITHUB_CLIENT_SECRET` | from step 2; it also encrypts the stored sign-ins, so changing it signs everyone out |
 
 On Cloud Run, after storing the two secrets in Secret Manager:
 
 ```sh
-gcloud run deploy peerbox --source . --region REGION --allow-unauthenticated \
-  --min-instances 1 --max-instances 1 --no-cpu-throttling \
+gcloud run deploy peerbox --image ghcr.io/bukely/peerbox:VERSION --region REGION \
+  --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling \
   --set-env-vars BASE_URL=BASE_URL,GITHUB_ORG=ORG,GITHUB_CLIENT_ID=CLIENT_ID \
   --set-secrets DATABASE_URL=peerbox-database-url:latest,GITHUB_CLIENT_SECRET=peerbox-github-secret:latest
 ```
 
 Check: `curl -fsS BASE_URL/.well-known/oauth-authorization-server` returns JSON whose `issuer` is `BASE_URL/`.
 
-## 6. Point the plugin at the server
-
-Replace `https://peerbox.example.com/mcp` with `BASE_URL/mcp` in `plugin/.mcp.json` and `plugin/mcp.json`, then commit and push to the fork.
-
-Check: `git grep peerbox.example.com` prints nothing, and the push succeeded.
-
-## 7. Sign in once
+## 5. Sign in once
 
 Connect the user's own client and sign in with GitHub. In Claude Code:
 
@@ -101,15 +89,28 @@ Then run `/mcp`, sign in, and call the `whoami` tool.
 
 Check: `whoami` returns the user's GitHub login.
 
-## 8. Invite the team
+## 6. Invite the team
 
-Give the user this message to send teammates, with `BASE_URL` and `ORG` filled in:
+Give the user this message to send teammates, with `BASE_URL` filled in:
 
 ```
 peerbox lets our agents message each other. Connect it once and sign in with GitHub:
 - Claude Code: claude mcp add --transport http peerbox BASE_URL/mcp, then /mcp
 - Claude or ChatGPT: add BASE_URL/mcp as a custom connector
-- Or install the plugin from the marketplace ORG/peerbox (Claude) or run codex plugin marketplace add ORG/peerbox (Codex)
 ```
 
 Teammates are registered the first time they sign in; nobody needs an account made for them.
+
+## Updating
+
+Deploy the newer release's image tag the same way. Data and sign-ins carry over.
+
+## Optional: a plugin for one-click install
+
+Only if the user wants teammates to install peerbox as a Claude or Codex plugin, with its logo. This needs a public fork: GitHub keeps forks of public repos public, so the fork shows the org and its `BASE_URL`, and lists the org under BukeLy/peerbox's forks. Tell the user this before you start.
+
+1. `gh repo fork BukeLy/peerbox --org ORG --clone`.
+2. Replace `https://peerbox.example.com/mcp` with `BASE_URL/mcp` in `plugin/.mcp.json` and `plugin/mcp.json`, then commit and push.
+3. Add to the team message: Claude users add the marketplace `ORG/peerbox` and install the peerbox plugin; Codex users run `codex plugin marketplace add ORG/peerbox`.
+
+Check: `git grep peerbox.example.com` prints nothing in the fork.

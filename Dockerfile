@@ -7,6 +7,6 @@ RUN uv sync --locked
 FROM python:3.15-slim-trixie
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
-COPY server.py icon.png ./
+COPY server.py icon.png schema.sql ./
 ENV PATH="/app/.venv/bin:$PATH"
 CMD exec granian --interface asgi --loop uvloop --http 1 --no-ws --host 0.0.0.0 --port "${PORT:-8000}" server:app

@@ -91,6 +91,8 @@ def wake_waiters(*_) -> None:
 async def database(server):
     global pool
     async with create_pool(DATABASE_URL, min_size=1, max_size=5) as pool:
+        # Every statement is "if not exists", so an empty database gets its tables here.
+        await pool.execute((HERE / "schema.sql").read_text())
         listener = await connect(DATABASE_URL)
         try:
             await listener.add_listener("notes", wake_waiters)
