@@ -8,7 +8,7 @@ The plugin lives in a private repo of the organisation, `ORG/peerbox-plugin`. Ne
 
 ```sh
 gh repo create ORG/peerbox-plugin --private --clone && cd peerbox-plugin
-mkdir -p .claude-plugin .agents/plugins plugin/.claude-plugin plugin/assets
+mkdir -p .claude-plugin .agents/plugins plugin/.claude-plugin plugin/.codex-plugin plugin/assets
 curl -fsSLo plugin/assets/icon.png https://raw.githubusercontent.com/BukeLy/peerbox/main/server/icon.png
 ```
 
@@ -16,7 +16,7 @@ Teammates need read access. Org members have it when the org's base permission i
 
 ## 2. Write the files
 
-Write these six files exactly, with `BASE_URL` replaced in the two MCP files.
+Write these five files exactly, with `BASE_URL` replaced in `plugin/.mcp.json`.
 
 `.claude-plugin/marketplace.json`, where Claude Code and Claude Desktop find the plugin:
 
@@ -59,7 +59,7 @@ Write these six files exactly, with `BASE_URL` replaced in the two MCP files.
 }
 ```
 
-`plugin/.mcp.json`, the server for Claude:
+`plugin/.mcp.json`, the server for both Claude and Codex:
 
 ```json
 {
@@ -69,47 +69,26 @@ Write these six files exactly, with `BASE_URL` replaced in the two MCP files.
 }
 ```
 
-`plugin/plugin.json`, the plugin for Codex with its logo:
+`plugin/.codex-plugin/plugin.json`, the plugin for Codex with its logo. It points at the same `.mcp.json`:
 
 ```json
 {
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "peerbox",
   "description": "A shared inbox for your teammates' AI agents. Write to a teammate or to one of their agents, and the note waits until they read it.",
   "author": { "name": "BukeLy", "url": "https://github.com/BukeLy" },
   "homepage": "https://bukely.github.io/peerbox/",
   "repository": "https://github.com/BukeLy/peerbox",
-  "extensions": {
-    "com.openai": {
-      "interface": {
-        "displayName": "peerbox",
-        "shortDescription": "A shared inbox for AI agents",
-        "longDescription": "Write to a teammate or to one of their agents by the names they go by. If that agent is offline, the note waits in its inbox. Only active members of your GitHub organisation can sign in.",
-        "developerName": "BukeLy",
-        "category": "Productivity",
-        "websiteURL": "https://bukely.github.io/peerbox/",
-        "composerIcon": "./assets/icon.png",
-        "logo": "./assets/icon.png"
-      }
-    }
-  }
-}
-```
-
-`plugin/mcp.json`, the server for Codex:
-
-```json
-{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-  "mcpServers": {
-    "peerbox": {
-      "type": "streamable-http",
-      "url": "BASE_URL/mcp",
-      "extensions": {
-        "com.openai": { "auth": { "type": "oauth", "client": { "mode": "cimd" } } }
-      }
-    }
-  }
+  "interface": {
+    "displayName": "peerbox",
+    "shortDescription": "A shared inbox for AI agents",
+    "longDescription": "Write to a teammate or to one of their agents by the names they go by. If that agent is offline, the note waits in its inbox. Only active members of your GitHub organisation can sign in.",
+    "developerName": "BukeLy",
+    "category": "Productivity",
+    "websiteURL": "https://bukely.github.io/peerbox/",
+    "logo": "./assets/icon.png",
+    "composerIcon": "./assets/icon.png"
+  },
+  "mcpServers": "./.mcp.json"
 }
 ```
 
@@ -129,7 +108,7 @@ Check: `gh repo view ORG/peerbox-plugin --json visibility -q .visibility` prints
 |---|---|
 | Claude Code | `claude plugin marketplace add ORG/peerbox-plugin`, then `claude plugin install peerbox@peerbox`; in a session that was already open, run `/reload-plugins`; sign in with `/mcp` |
 | Claude Desktop | Customize → Plugins → Add marketplace → `ORG/peerbox-plugin`, then install peerbox. A private repo needs the Claude GitHub App installed on ORG |
-| Codex | `codex plugin marketplace add ORG/peerbox-plugin`, then `codex plugin add peerbox@peerbox`; it signs you in as it installs |
+| Codex | `codex plugin marketplace add ORG/peerbox-plugin`, then `codex plugin add peerbox@peerbox`, then `codex mcp login peerbox` to sign in |
 | ChatGPT on the web | Plugins → + → Add custom MCP server, with `BASE_URL/mcp` |
 
 ## Updating
