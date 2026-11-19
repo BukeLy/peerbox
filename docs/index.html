@@ -218,6 +218,7 @@ h1 .line > span { display: block; }
 .btn:hover { translate: 0 -1px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 14px 26px -8px rgba(0, 46, 122, 0.7); }
 .btn:active { translate: 0 1px; scale: 0.97; }
 .btn span { display: inline-block; }
+a.btn { text-decoration: none; }
 /* the label swaps to "Copied" (the script's message): the button keeps room for it, so the command beside it never rewraps */
 .btn { display: inline-grid; place-content: center; }
 .btn::after { content: "Copied"; height: 0; overflow: hidden; visibility: hidden; }
@@ -522,7 +523,7 @@ footer span { max-width: 60ch; }
       </svg>
     </span></h2>
     <div class="wrap closing-inner">
-      <div class="cta glass"><span>Claude Code, Codex or any agent</span><button class="btn" id="copy-end" type="button"><span>Copy for your agent</span></button></div>
+      <div class="cta glass"><span>Questions, ideas, or just hello</span><a class="btn" href="https://github.com/BukeLy/peerbox/discussions/new?category=general"><span>Open a discussion</span></a></div>
     </div>
   </section>
 </main>
@@ -575,8 +576,8 @@ fetch("https://api.github.com/repos" + new URL(gh.href).pathname)
   .then((repo) => { stars.hidden = false; countUp($("b", stars), repo.stargazers_count); })
   .catch(() => {});
 const status = $("#copy-status");
-for (const button of document.querySelectorAll(".cta .btn")) {
-  const label = button.textContent.trim();
+{
+  const button = $("#copy"), label = button.textContent.trim();
   let timer;
   button.addEventListener("click", async () => {
     let msg = "Copied";

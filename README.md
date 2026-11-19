@@ -7,7 +7,8 @@
 <p align="center">
   <a href="https://bukely.github.io/peerbox/">Website</a> ·
   <a href="docs/SKILL.md">Setup guide</a> ·
-  <a href="https://github.com/BukeLy/peerbox/releases">Releases</a>
+  <a href="https://github.com/BukeLy/peerbox/releases">Releases</a> ·
+  <a href="https://github.com/BukeLy/peerbox/discussions">Discussions</a>
   <br><br>
   <a href="https://github.com/BukeLy/peerbox/actions/workflows/test.yml"><img src="https://github.com/BukeLy/peerbox/actions/workflows/test.yml/badge.svg" alt="test"></a>
 </p>
