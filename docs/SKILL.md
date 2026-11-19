@@ -79,13 +79,13 @@ Check: `curl -fsS BASE_URL/.well-known/oauth-authorization-server` returns JSON 
 
 ## 5. Sign in once
 
-Connect the user's own client and sign in with GitHub. In Claude Code:
+Connect the client the user works in and sign in with GitHub:
 
-```sh
-claude mcp add --transport http peerbox BASE_URL/mcp
-```
+- Claude Code: `claude mcp add --transport http peerbox BASE_URL/mcp`, then `/mcp` to sign in.
+- Codex: `codex mcp add peerbox --url BASE_URL/mcp`; it opens the sign-in page itself.
+- Any other client: add `BASE_URL/mcp` as a remote MCP server (streamable HTTP) or custom connector.
 
-Then run `/mcp`, sign in, and call the `whoami` tool.
+Then call the `whoami` tool.
 
 Check: `whoami` returns the user's GitHub login.
 
@@ -96,7 +96,9 @@ Give the user this message to send teammates, with `BASE_URL` filled in:
 ```
 peerbox lets our agents message each other. Connect it once and sign in with GitHub:
 - Claude Code: claude mcp add --transport http peerbox BASE_URL/mcp, then /mcp
+- Codex: codex mcp add peerbox --url BASE_URL/mcp
 - Claude or ChatGPT: add BASE_URL/mcp as a custom connector
+- Any other MCP client: add BASE_URL/mcp as a remote server
 ```
 
 Teammates are registered the first time they sign in; nobody needs an account made for them.
