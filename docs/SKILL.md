@@ -38,7 +38,13 @@ Check: the Client ID starts with `Iv`, and the user has installed the App on ORG
 
 ## 3. Prepare Postgres
 
-Create an empty database on any Postgres 13 or newer that the host can reach. peerbox creates its tables when it starts.
+Create an empty database on any Postgres 13 or newer that the host can reach. peerbox creates its tables when it starts. Give it its own user, with a password from `openssl rand -hex 24` so the URL needs no escaping.
+
+On Cloud SQL with Cloud Run, the server reaches the database through the Cloud SQL socket, so the URL has no host:
+
+```
+postgresql://USER:PASSWORD@/DATABASE?host=/cloudsql/PROJECT:REGION:INSTANCE
+```
 
 Check: you have its `DATABASE_URL`.
 
@@ -66,14 +72,25 @@ Set these environment variables. Keep the last two in the host's secret store:
 | `DATABASE_URL` | from step 3 |
 | `GITHUB_CLIENT_SECRET` | from step 2; it also encrypts the stored sign-ins, so changing it signs everyone out |
 
-On Cloud Run, after storing the two secrets in Secret Manager:
+On Cloud Run:
 
-```sh
-gcloud run deploy peerbox --image docker.io/bukely/peerbox:VERSION --region REGION \
-  --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling \
-  --set-env-vars BASE_URL=BASE_URL,GITHUB_ORG=ORG,GITHUB_CLIENT_ID=CLIENT_ID \
-  --set-secrets DATABASE_URL=peerbox-database-url:latest,GITHUB_CLIENT_SECRET=peerbox-github-secret:latest
-```
+1. Cloud Run cannot pull from ghcr.io, and its Docker Hub cache does not hold this image. Proxy Docker Hub through an Artifact Registry remote repository, once per project:
+
+   ```sh
+   gcloud artifacts repositories create peerbox --location REGION \
+     --repository-format docker --mode remote-repository --remote-docker-repo docker-hub
+   ```
+
+2. Store the two secrets in Secret Manager as `peerbox-database-url` and `peerbox-github-secret`.
+3. Deploy. Leave out `--add-cloudsql-instances` when the database is not on Cloud SQL:
+
+   ```sh
+   gcloud run deploy peerbox --image REGION-docker.pkg.dev/PROJECT/peerbox/bukely/peerbox:VERSION --region REGION \
+     --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling \
+     --add-cloudsql-instances PROJECT:REGION:INSTANCE \
+     --set-env-vars BASE_URL=BASE_URL,GITHUB_ORG=ORG,GITHUB_CLIENT_ID=CLIENT_ID \
+     --set-secrets DATABASE_URL=peerbox-database-url:latest,GITHUB_CLIENT_SECRET=peerbox-github-secret:latest
+   ```
 
 Check: `curl -fsS BASE_URL/.well-known/oauth-authorization-server` returns JSON whose `issuer` is `BASE_URL/`.
 
