@@ -17,9 +17,9 @@ Ask the user where the server will run. Any host fits that gives:
 - HTTPS terminated in front of the container, with no other way to reach it;
 - a Postgres 13 or newer that it can reach.
 
-A VM running Docker behind a TLS proxy fits, and so does Cloud Run with the right settings. If the host is Cloud Run, read https://bukely.github.io/peerbox/cloud-run.md now: it gives that host's URL, database connection and deploy command for steps 1, 3 and 4. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, which stops push; if the user names one, explain this and suggest a host that fits.
+A VM running Docker behind a TLS proxy fits, and so does a container platform set to one always-on instance. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, which stops push; if the user names one, explain this and suggest a host that fits.
 
-Then settle the HTTPS origin the server will answer on, before anything else, because the GitHub App's callback depends on it. Call it `BASE_URL`, with no trailing slash. It is usually the domain the user will point at the server.
+Then settle the HTTPS origin the server will answer on, before anything else, because the GitHub App's callback depends on it. Call it `BASE_URL`, with no trailing slash. It is the domain the user will point at the server, or the address the platform assigns to the service.
 
 Check: the user confirms the host and `BASE_URL`.
 
@@ -49,7 +49,7 @@ Check: you have its `DATABASE_URL`.
 
 ## 4. Deploy
 
-Deploy the image `docker.io/bukely/peerbox:VERSION` from Docker Hub; `ghcr.io/bukely/peerbox:VERSION` is the same image. `VERSION` is the newest release without its leading `v`:
+Deploy the image `docker.io/bukely/peerbox:VERSION` from Docker Hub; `ghcr.io/bukely/peerbox:VERSION` is the same image. If the host pulls only from its own registry, proxy or copy the image there. `VERSION` is the newest release without its leading `v`:
 
 ```sh
 gh release view -R BukeLy/peerbox --json tagName -q .tagName
