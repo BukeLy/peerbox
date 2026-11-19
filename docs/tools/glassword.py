@@ -58,7 +58,7 @@ if __name__ == "__main__":
             "        ",
         ),
         (
-            """<span class="glass-word" aria-hidden="true" style="--word-mask: url('/leave-a-note.svg')">""",
+            """<span class="glass-word" aria-hidden="true" style="--word-mask: url('leave-a-note.svg')">""",
             "leave-a-note.svg",
             "lan",
             "      ",

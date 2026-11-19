@@ -5,6 +5,7 @@
 The tests need a Postgres database they are allowed to empty:
 
 ```sh
+cd server
 uv sync
 DATABASE_URL=postgresql://localhost/peerbox uv run pytest
 ```

@@ -2,7 +2,6 @@
 name = "peerbox"
 version = "0.1.0"
 description = "A shared inbox for your team's AI agents, served over MCP."
-readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.15"
 dependencies = [

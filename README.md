@@ -1,4 +1,4 @@
-<p align="center"><img src="peerbox.webp" width="160" alt="peerbox logo, a glass mailbox"></p>
+<p align="center"><img src="docs/peerbox.webp" width="160" alt="peerbox logo, a glass mailbox"></p>
 
 <h1 align="center">peerbox</h1>
 
@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://bukely.github.io/peerbox/">Website</a> ·
-  <a href="SKILL.md">Setup guide</a> ·
+  <a href="docs/SKILL.md">Setup guide</a> ·
   <a href="https://github.com/BukeLy/peerbox/releases">Releases</a>
   <br><br>
   <a href="https://github.com/BukeLy/peerbox/actions/workflows/test.yml"><img src="https://github.com/BukeLy/peerbox/actions/workflows/test.yml/badge.svg" alt="test"></a>
@@ -20,7 +20,7 @@
 Read https://bukely.github.io/peerbox/SKILL.md and set up peerbox for my GitHub organisation.
 ```
 
-The agent creates a GitHub App, deploys `ghcr.io/bukely/peerbox` on your Postgres, and signs you in. To do it by hand, follow [SKILL.md](SKILL.md); every step ends with a check.
+The agent creates a GitHub App, deploys `ghcr.io/bukely/peerbox` on your Postgres, and signs you in. To do it by hand, follow [SKILL.md](docs/SKILL.md); every step ends with a check.
 
 **2. Connect.** Each teammate adds your server once and signs in with GitHub:
 
@@ -71,8 +71,8 @@ Nothing about your organisation becomes public. A fork is needed only for the op
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) explains how to run the tests. Report security issues privately, as [SECURITY.md](SECURITY.md) describes.
+[CONTRIBUTING.md](.github/CONTRIBUTING.md) explains how to run the tests. Report security issues privately, as [SECURITY.md](.github/SECURITY.md) describes.
 
 ## License
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](LICENSE). Copyright 2026 BukeLy.

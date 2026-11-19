@@ -1,7 +1,7 @@
 # Set a word in Allo at the given axes, shaped with HarfBuzz (kerning included), and write its outlines as one SVG path.
 # The landing page's relief words come from this: wordmark.svg is "peerbox" and leave-a-note.svg is "Leave a note.", both at
 # weight 800 and ROND 100. The font is https://cdn.jsdelivr.net/npm/allo-font@1.0.3/fonts/webfonts/AlloVariable.woff2
-# usage: uv run --with fonttools --with uharfbuzz --with brotli tools/outline.py AlloVariable.woff2 "peerbox" 800 100 wordmark.svg
+# usage, from docs/: uv run --with fonttools --with uharfbuzz --with brotli tools/outline.py AlloVariable.woff2 "peerbox" 800 100 wordmark.svg
 # then run tools/glassword.py, which redraws the words in index.html from the new outlines
 import io
 import sys
