@@ -198,10 +198,10 @@ h2 { margin: 0 0 18px; font-size: clamp(40px, 4.4vw, 62px); font-weight: 700; li
 /* the mailbox stands on the name's baseline, 0.0564 of the name's width above its bottom */
 .masthead { --mw: min(940px, 74%); display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
 .mast-word { --word-mask: url("wordmark.svg"); flex: none; width: var(--mw); margin-left: calc(var(--mw) * -0.006); }
-/* the lede and the install bar share a row on one baseline: the bar's label sits on the lede's first line */
-.hero-body { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); align-items: baseline; column-gap: 64px; margin-top: clamp(28px, 6vh, 64px); }
+/* the install bar and its hint are centred against the headline and lede together */
+.hero-body { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); column-gap: 64px; margin-top: clamp(28px, 6vh, 64px); }
 .hero-body .lede { grid-column: 1; }
-.hero-body .install { grid-area: 2 / 2; }
+.hero-body .install { grid-area: 1 / 2 / span 2 / 3; align-self: center; }
 h1 + .lede { margin: 20px 0 0; }
 h1 { margin: 0; font-size: clamp(40px, 4.4vw, 62px); font-weight: 700; line-height: 1; letter-spacing: -0.025em; text-wrap: initial; }
 h1 .line { display: block; overflow: clip; padding-bottom: 0.1em; margin-bottom: -0.1em; }
