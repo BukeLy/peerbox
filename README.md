@@ -66,7 +66,9 @@ You need:
 - an empty Postgres database; peerbox creates its tables;
 - a container host that keeps exactly one instance running behind HTTPS (Cloud Run works).
 
-Nothing about your organisation becomes public. A fork is needed only for the optional one-click plugin.
+**Images:** `ghcr.io/bukely/peerbox` and, on Docker Hub, `bukely/peerbox`, tagged by release. Nothing about your organisation becomes public.
+
+**One-click plugin (optional):** teammates can install peerbox as a Claude or Codex plugin from a private copy of this repo that holds your server URL. A GitHub fork won't do, because forks of a public repo are always public. The last section of [SKILL.md](docs/SKILL.md) has the commands.
 
 **Update:** deploy the image of the newest release. Watch this repo's releases to hear about new versions.
 

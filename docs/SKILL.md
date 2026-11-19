@@ -44,7 +44,7 @@ Check: you have its `DATABASE_URL`.
 
 ## 4. Deploy
 
-Deploy the image `ghcr.io/bukely/peerbox:VERSION`, where `VERSION` is the newest release without its leading `v`:
+Deploy the image `ghcr.io/bukely/peerbox:VERSION`, or the same image from Docker Hub as `bukely/peerbox:VERSION`. `VERSION` is the newest release without its leading `v`:
 
 ```sh
 gh release view -R BukeLy/peerbox --json tagName -q .tagName
@@ -107,10 +107,19 @@ Deploy the newer release's image tag the same way. Data and sign-ins carry over.
 
 ## Optional: a plugin for one-click install
 
-Only if the user wants teammates to install peerbox as a Claude or Codex plugin, with its logo. This needs a public fork: GitHub keeps forks of public repos public, so the fork shows the org and its `BASE_URL`, and lists the org under BukeLy/peerbox's forks. Tell the user this before you start.
+Only if the user wants teammates to install peerbox as a Claude or Codex plugin, with its logo. The plugin lives in a private copy of this repo, so it stays inside the org. Do not fork: a fork of a public repo is always public.
 
-1. `gh repo fork BukeLy/peerbox --org ORG --clone`.
-2. Replace `https://peerbox.example.com/mcp` with `BASE_URL/mcp` in `plugin/.mcp.json` and `plugin/mcp.json`, then commit and push.
-3. Add to the team message: Claude users add the marketplace `ORG/peerbox` and install the peerbox plugin; Codex users run `codex plugin marketplace add ORG/peerbox`.
+1. Make the private copy:
+   ```sh
+   gh repo create ORG/peerbox --private
+   git clone --bare https://github.com/BukeLy/peerbox.git peerbox-mirror.git
+   git -C peerbox-mirror.git push --mirror https://github.com/ORG/peerbox.git
+   gh repo clone ORG/peerbox
+   ```
+2. In the clone, replace `https://peerbox.example.com/mcp` with `BASE_URL/mcp` in `plugin/.mcp.json` and `plugin/mcp.json`, then commit and push.
+3. Make sure teammates can read ORG/peerbox. For Claude and Claude Desktop, the Claude GitHub App must also have access to it.
+4. Add to the team message: Claude users add the marketplace `ORG/peerbox` and install the peerbox plugin; Codex users run `codex plugin marketplace add ORG/peerbox`.
 
-Check: `git grep peerbox.example.com` prints nothing in the fork.
+Check: `git grep peerbox.example.com` prints nothing in the clone, and `/plugin marketplace add ORG/peerbox` works for the user.
+
+To take later plugin changes: `git pull https://github.com/BukeLy/peerbox.git main` in the clone, then push.
