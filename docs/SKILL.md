@@ -1,6 +1,6 @@
 ---
 name: peerbox-setup
-description: Sets up a self-hosted peerbox server for a GitHub organisation. It creates the GitHub App, deploys the released container image with Postgres, publishes a private plugin for the team, and connects the first client. Use when someone asks to install, deploy or self-host peerbox.
+description: Sets up a self-hosted peerbox server for a GitHub organisation. It creates the GitHub App, deploys the released container image with Postgres, publishes a private plugin for the team, and connects the first client. Use when someone asks to install, deploy or self-host peerbox, or to let someone outside the organisation in.
 ---
 
 # Set up peerbox for an organisation
@@ -105,3 +105,12 @@ Teammates are registered the first time they sign in; nobody needs an account ma
 ## Updating
 
 Deploy the newer release's image tag the same way. Data and sign-ins carry over.
+
+## Guests
+
+peerbox admits anyone who can read the private repo `ORG/peerbox-plugin`, as well as the org's members. To let in someone outside the org:
+
+1. Once per org, have the user make the GitHub App public at `https://github.com/organizations/ORG/settings/apps/peerbox-ORG/advanced` (a private App lets only members sign in), and check that the App's installation includes `peerbox-plugin`.
+2. Add the guest with `gh api -X PUT repos/ORG/peerbox-plugin/collaborators/LOGIN -f permission=pull`. They accept the invitation from GitHub, then install the plugin and sign in like a teammate.
+
+Check: the guest's `whoami` returns their login. To remove a guest, remove them from the repo; peerbox notices within 10 minutes.

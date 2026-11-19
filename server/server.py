@@ -112,21 +112,30 @@ members = TokenCache(ttl_seconds=600, max_size=10_000)
 
 
 async def is_member(token: AccessToken) -> bool:
-    """Whether the token's user is an active member of GITHUB_ORG, rechecked every few minutes."""
+    """Whether the token's user counts as a member, rechecked every few minutes: an active
+    member of GITHUB_ORG, or a guest who can read GITHUB_ORG/peerbox-plugin."""
     if members.get(token.token)[0]:
         return True
-    async with httpx2.AsyncClient(timeout=10) as client:
-        response = await client.get(
-            f"https://api.github.com/user/memberships/orgs/{GITHUB_ORG}",
-            headers={
-                "Authorization": f"Bearer {token.token}",
-                "Accept": "application/vnd.github+json",
-            },
+    async with httpx2.AsyncClient(
+        base_url="https://api.github.com",
+        headers={
+            "Authorization": f"Bearer {token.token}",
+            "Accept": "application/vnd.github+json",
+        },
+        timeout=10,
+    ) as github:
+        membership = await github.get(f"/user/memberships/orgs/{GITHUB_ORG}")
+        admitted = (
+            membership.status_code == 200 and membership.json().get("state") == "active"
         )
-    if response.status_code != 200 or response.json().get("state") != "active":
-        return False
-    members.set(token.token, token)
-    return True
+        if not admitted:
+            # A guest is a collaborator on the org's plugin repo. Only a private repo
+            # counts: anyone on GitHub can read a public one.
+            repo = await github.get(f"/repos/{GITHUB_ORG}/peerbox-plugin")
+            admitted = repo.status_code == 200 and repo.json().get("private") is True
+    if admitted:
+        members.set(token.token, token)
+    return admitted
 
 
 async def org_member(ctx: AuthContext) -> bool:
@@ -533,7 +542,9 @@ async def save(subscription: Subscription) -> None:
 async def events_principal() -> str:
     token = get_access_token()
     if token is None or not await is_member(token):
-        raise MCPError(FORBIDDEN, f"Only active members of {GITHUB_ORG} can subscribe")
+        raise MCPError(
+            FORBIDDEN, f"Only members of {GITHUB_ORG} and its guests can subscribe"
+        )
     return token.claims["login"]
 
 

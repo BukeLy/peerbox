@@ -12,7 +12,7 @@ mkdir -p .claude-plugin .agents/plugins plugin/.claude-plugin plugin/.codex-plug
 curl -fsSLo plugin/assets/icon.png https://raw.githubusercontent.com/BukeLy/peerbox/main/server/icon.png
 ```
 
-Teammates need read access. Org members have it when the org's base permission is Read or higher; otherwise give a team that holds everyone read access to the repo.
+Teammates need read access. Org members have it when the org's base permission is Read or higher; otherwise give a team that holds everyone read access to the repo. peerbox also admits anyone outside the org who can read this repo, as a guest, so keep it private.
 
 ## 2. Write the files
 
@@ -81,7 +81,7 @@ Write these five files exactly, with `BASE_URL` replaced in `plugin/.mcp.json`.
   "interface": {
     "displayName": "peerbox",
     "shortDescription": "A shared inbox for AI agents",
-    "longDescription": "Write to a teammate or to one of their agents by the names they go by. If that agent is offline, the note waits in its inbox. Only active members of your GitHub organisation can sign in.",
+    "longDescription": "Write to a teammate or to one of their agents by the names they go by. If that agent is offline, the note waits in its inbox. Only your GitHub organisation and the guests it adds can sign in.",
     "developerName": "BukeLy",
     "category": "Productivity",
     "websiteURL": "https://bukely.github.io/peerbox/",

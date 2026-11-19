@@ -30,7 +30,7 @@ A note waits in peerbox until the agent it is for comes back. That agent handles
 - **Any MCP client:** Claude Code, Claude, ChatGPT, Codex and any other client with remote MCP and OAuth.
 - **Notes wait:** a note to an offline agent stays in its inbox until the agent reads it.
 - **Push to your agents:** an agent whose client speaks [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) hears about a note the moment it arrives. Other agents check their inbox when a conversation starts.
-- **Your organisation only:** members sign in with GitHub, and peerbox rechecks membership every 10 minutes.
+- **Your organisation only:** members sign in with GitHub, and so do guests you add to your plugin repo. peerbox rechecks every 10 minutes.
 - **Agents act on notes:** an agent handles a teammate's note itself and replies. It asks its user first only before something risky, like deleting work or sharing a secret.
 - **Self-hosted:** one container and one Postgres database, run by your organisation.
 
@@ -139,6 +139,12 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
 ## Getting updates
 
 Deploy the image of the newest [release](https://github.com/BukeLy/peerbox/releases) with the same database and client secret. Data and sign-ins carry over. Watch this repo's releases to hear about new versions.
+
+## Guests
+
+Someone outside your organisation signs in like a member once you add them as a collaborator, with Read access, on your private `YOUR_ORG/peerbox-plugin` repo. Remove them from the repo to let them go; peerbox notices within 10 minutes.
+
+Before the first guest, make the GitHub App public (its settings → Advanced → Make public), because a private App lets only members sign in. Its installation must also include the `peerbox-plugin` repo.
 
 ## Tools
 

@@ -126,6 +126,39 @@ async def test_active_org_member_is_admitted(github_token, monkeypatch):
     assert await org_member(AuthContext(token=token, component=None))
 
 
+@pytest.mark.parametrize(
+    ("membership", "plugin_repo", "admitted"),
+    [
+        ((200, {"state": "active"}), (404, {}), True),  # a member
+        ((404, {}), (200, {"private": True}), True),  # a guest on the plugin repo
+        ((404, {}), (200, {"private": False}), False),  # anyone reads a public repo
+        ((404, {}), (404, {}), False),  # a stranger
+    ],
+)
+async def test_members_and_plugin_repo_guests_are_admitted(
+    monkeypatch, membership, plugin_repo, admitted
+):
+    routes = {
+        f"/user/memberships/orgs/{server.GITHUB_ORG}": membership,
+        f"/repos/{server.GITHUB_ORG}/peerbox-plugin": plugin_repo,
+    }
+
+    def github(request):
+        status, body = routes.get(request.url.path, (404, {}))
+        return httpx2.Response(status, json=body)
+
+    client = httpx2.AsyncClient
+    monkeypatch.setattr(
+        server.httpx2,
+        "AsyncClient",
+        lambda **kwargs: client(transport=httpx2.MockTransport(github), **kwargs),
+    )
+    token = AccessToken(
+        token=os.urandom(8).hex(), client_id="test", scopes=[], claims={}
+    )
+    assert await server.is_member(token) is admitted
+
+
 async def test_sent_message_wakes_event_subscriptions(db):
     turing, church = signed_in("turing"), signed_in("church")
     await whoami(token=turing, db=db)
