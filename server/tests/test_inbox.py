@@ -158,7 +158,7 @@ def webhook(monkeypatch):
     return deliveries
 
 
-HOOK = "https://chatgpt.example/hook"
+HOOK = "https://client.example/hook"
 
 
 async def subscribe_turing() -> str:
@@ -240,7 +240,7 @@ async def test_reply_reaches_the_agent_that_wrote(db):
     assert [m["text"] for m in queued["messages"]] == ["thanks"]
 
 
-async def test_chatgpt_finds_message_events_in_server_discover():
+async def test_pre_sep_clients_find_message_events_in_server_discover():
     async with Client(server.mcp) as client:
         discovered = await client.session.send_discover("2026-07-28")
     assert "events" in discovered["capabilities"]

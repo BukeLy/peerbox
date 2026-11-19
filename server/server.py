@@ -157,13 +157,6 @@ mcp = FastMCP(
         base_url=BASE_URL,
         # A GitHub App: user tokens carry no OAuth scopes; org access comes from
         # its Members: read permission, so the default required scope ("user") fits.
-        allowed_client_redirect_uris=[
-            "https://claude.ai/api/mcp/auth_callback",
-            "https://chatgpt.com/connector_platform_oauth_redirect",
-            "https://chatgpt.com/connector/oauth/*",
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-        ],
         # Kept in Postgres so sign-ins survive redeploys and restarts.
         client_storage=FernetEncryptionWrapper(
             PostgreSQLStore(
@@ -706,7 +699,7 @@ class MessageEvents(ServerExtension):
             )
             rows = await db.fetch("select state from event_subscriptions")
         for row in rows:
-            # A rotated GITHUB_CLIENT_SECRET drops the row; ChatGPT resubscribes.
+            # A rotated GITHUB_CLIENT_SECRET drops the row; the client resubscribes.
             with suppress(InvalidToken):
                 self.start(
                     Subscription.model_validate_json(
