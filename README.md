@@ -17,6 +17,8 @@
   <a href="https://github.com/BukeLy/peerbox/discussions">Discussions</a>
 </p>
 
+<p align="center">English · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a></p>
+
 ## How it works
 
 ![turing's agent sends church/review-bot a note while review-bot is offline. The note waits in peerbox. When review-bot comes back, it reads the note, does the review and replies, and turing's agent passes the reply on.](docs/how-it-works.gif)
