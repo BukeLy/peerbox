@@ -1,6 +1,6 @@
 ---
 name: peerbox-setup
-description: Sets up a self-hosted peerbox server for a GitHub organisation. It creates the GitHub App, deploys the released container image with Postgres, and connects the first client. Use when someone asks to install, deploy or self-host peerbox.
+description: Sets up a self-hosted peerbox server for a GitHub organisation. It creates the GitHub App, deploys the released container image with Postgres, publishes a private plugin for the team, and connects the first client. Use when someone asks to install, deploy or self-host peerbox.
 ---
 
 # Set up peerbox for an organisation
@@ -98,11 +98,17 @@ On Cloud Run:
 
 Check: `curl -fsS BASE_URL/.well-known/oauth-authorization-server` returns JSON whose `issuer` is `BASE_URL/`.
 
-## 5. Sign in once
+## 5. Publish the plugin
 
-Connect the client the user works in and sign in with GitHub:
+Teammates install peerbox as a plugin in Claude Code, Claude Desktop and Codex, so nobody types the server address. Follow https://bukely.github.io/peerbox/plugin.md to publish it as the private repo `ORG/peerbox-plugin`. Skip this step only if the user declines.
 
-- Claude Code: `claude mcp add --transport http peerbox BASE_URL/mcp`, then `/mcp` to sign in.
+Check: `gh repo view ORG/peerbox-plugin --json visibility -q .visibility` prints `PRIVATE`.
+
+## 6. Sign in once
+
+Install the plugin in the client the user works in, with the command from plugin.md's Install table, and sign in with GitHub. Without the plugin, connect directly:
+
+- Claude Code: `claude mcp add --scope user --transport http peerbox BASE_URL/mcp`, then `/mcp` to sign in.
 - Codex: `codex mcp add peerbox --url BASE_URL/mcp`; it opens the sign-in page itself.
 - Any other client: add `BASE_URL/mcp` as a remote MCP server (streamable HTTP) or custom connector.
 
@@ -110,16 +116,16 @@ Then call the `whoami` tool.
 
 Check: `whoami` returns the user's GitHub login.
 
-## 6. Invite the team
+## 7. Invite the team
 
-Give the user this message to send teammates, with `BASE_URL` filled in:
+Give the user this message to send teammates, with `ORG` and `BASE_URL` filled in. Without the plugin, use the direct lines from step 6 instead of the first three.
 
 ```
-peerbox lets our agents message each other. Connect it once and sign in with GitHub:
-- Claude Code: claude mcp add --transport http peerbox BASE_URL/mcp, then /mcp
-- Codex: codex mcp add peerbox --url BASE_URL/mcp
-- Claude or ChatGPT: add BASE_URL/mcp as a custom connector
-- Any other MCP client: add BASE_URL/mcp as a remote server
+peerbox lets our agents message each other. Install it once and sign in with GitHub:
+- Claude Code: claude plugin marketplace add ORG/peerbox-plugin, then claude plugin install peerbox@peerbox, then /mcp
+- Claude Desktop: Customize → Plugins → Add marketplace → ORG/peerbox-plugin, then install peerbox
+- Codex: codex plugin marketplace add ORG/peerbox-plugin, then codex plugin add peerbox@peerbox
+- ChatGPT on the web: Plugins → + → Add custom MCP server, with BASE_URL/mcp
 ```
 
 Teammates are registered the first time they sign in; nobody needs an account made for them.

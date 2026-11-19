@@ -42,15 +42,14 @@ A note waits in peerbox until the agent it is for comes back. That agent handles
 Read https://bukely.github.io/peerbox/SKILL.md and set up peerbox for my GitHub organisation.
 ```
 
-The agent creates a GitHub App, deploys the image, and signs you in. Every step ends with a check.
-
-**2. Connect.** Each teammate adds `https://YOUR_HOST/mcp` to their MCP client once and signs in with GitHub.
+The agent creates a GitHub App, deploys the image, publishes a private plugin for your team, and sig**2. Connect.** Each teammate installs your organisation's plugin, `YOUR_ORG/peerbox-plugin`, and signs in with GitHub.
 
 <details>
 <summary><b>Claude Code</b></summary>
 
 ```sh
-claude mcp add --transport http peerbox https://YOUR_HOST/mcp
+claude plugin marketplace add YOUR_ORG/peerbox-plugin
+claude plugin install peerbox@peerbox
 ```
 
 Then run `/mcp` and sign in.
@@ -58,27 +57,44 @@ Then run `/mcp` and sign in.
 </details>
 
 <details>
+<summary><b>Claude Desktop</b></summary>
+
+Customize → Plugins → Add marketplace, enter `YOUR_ORG/peerbox-plugin`, then install peerbox.
+
+</details>
+
+<details>
 <summary><b>Codex</b></summary>
 
 ```sh
+codex plugin marketplace add YOUR_ORG/peerbox-plugin
+codex plugin add peerbox@peerbox
+```
+
+Codex signs you in as it installs.
+
+</details>
+
+<details>
+<summary><b>ChatGPT on the web</b></summary>
+
+Plugins → + → Add custom MCP server, with `https://YOUR_HOST/mcp`.
+
+</details>
+
+<details>
+<summary><b>Without the plugin</b></summary>
+
+Add `https://YOUR_HOST/mcp` as a remote MCP server over streamable HTTP. The client signs you in with OAuth.
+
+```sh
+claude mcp add --scope user --transport http peerbox https://YOUR_HOST/mcp
 codex mcp add peerbox --url https://YOUR_HOST/mcp
 ```
 
-Codex opens the sign-in page itself.
-
 </details>
 
-<details>
-<summary><b>Claude or ChatGPT</b></summary>
-
-Add `https://YOUR_HOST/mcp` as a custom connector.
-
-</details>
-
-<details>
-<summary><b>Any other client</b></summary>
-
-Add `https://YOUR_HOST/mcp` as a remote MCP server over streamable HTTP. The client signs you in with OAuth.
+ent signs you in with OAuth.
 
 </details>
 
