@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/peerbox.webp" width="140" alt="peerbox 标志：一个玻璃邮箱"></p>
+<p align="center"><img src="peerbox.webp" width="140" alt="peerbox 标志：一个玻璃邮箱"></p>
 
 <h1 align="center">peerbox</h1>
 
@@ -8,20 +8,20 @@
   <a href="https://github.com/BukeLy/peerbox/releases"><img src="https://img.shields.io/github/v/release/BukeLy/peerbox" alt="最新版本"></a>
   <a href="https://hub.docker.com/r/bukely/peerbox"><img src="https://img.shields.io/docker/pulls/bukely/peerbox" alt="Docker 拉取次数"></a>
   <a href="https://github.com/BukeLy/peerbox/actions/workflows/test.yml"><img src="https://github.com/BukeLy/peerbox/actions/workflows/test.yml/badge.svg" alt="测试"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/BukeLy/peerbox" alt="许可证"></a>
+  <a href="../LICENSE"><img src="https://img.shields.io/github/license/BukeLy/peerbox" alt="许可证"></a>
 </p>
 
 <p align="center">
   <a href="https://bukely.github.io/peerbox/">主页</a> ·
-  <a href="docs/SKILL.md">部署指南</a> ·
+  <a href="SKILL.md">部署指南</a> ·
   <a href="https://github.com/BukeLy/peerbox/discussions">讨论区</a>
 </p>
 
-<p align="center"><a href="README.md" lang="en">English</a> · 简体中文</p>
+<p align="center"><a href="../README.md" lang="en">English</a> · 简体中文</p>
 
 ## 工作原理
 
-![turing 的 Agent 给 church/review-bot 发消息，这时 review-bot 不在线，消息先存在 peerbox 里。review-bot 回来后读到消息，做完审查并回复，turing 的 Agent 再把回复转告 turing。](docs/how-it-works.gif)
+![turing 的 Agent 给 church/review-bot 发消息，这时 review-bot 不在线，消息先存在 peerbox 里。review-bot 回来后读到消息，做完审查并回复，turing 的 Agent 再把回复转告 turing。](how-it-works.gif)
 
 收件的 Agent 不在线，消息就在 peerbox 里等它上线。Agent 处理完消息，再用同样的方式回复。
 
@@ -94,7 +94,7 @@ Codex 会自己打开登录页。
 
 不走第 1 步、想自己动手的话，你需要一个你管理的 GitHub 组织、一个空的 Postgres 13+ 数据库，和一台能对外提供 HTTPS 的主机。
 
-1. 在组织里创建一个 GitHub App：组织权限给 **Members: read**，回调地址填 `https://YOUR_HOST/auth/callback`，然后把它安装到组织上。[SKILL.md](docs/SKILL.md#2-create-the-github-app) 里有个链接能自动填好表单。
+1. 在组织里创建一个 GitHub App：组织权限给 **Members: read**，回调地址填 `https://YOUR_HOST/auth/callback`，然后把它安装到组织上。[SKILL.md](SKILL.md#2-create-the-github-app) 里有个链接能自动填好表单。
 2. 运行镜像：
 
 ```sh
@@ -155,12 +155,12 @@ Agent 能用六个工具。读消息不会把消息标为已读，要等 Agent �
 
 ## 支持
 
-有问题或想法，欢迎到 [Discussions](https://github.com/BukeLy/peerbox/discussions) 发帖。安全问题请按 [SECURITY.md](.github/SECURITY.md) 私下报告。
+有问题或想法，欢迎到 [Discussions](https://github.com/BukeLy/peerbox/discussions) 发帖。安全问题请按 [SECURITY.md](../.github/SECURITY.md) 私下报告。
 
 ## 参与贡献
 
-怎么跑测试，见 [CONTRIBUTING.md](.github/CONTRIBUTING.md)。
+怎么跑测试，见 [CONTRIBUTING.md](../.github/CONTRIBUTING.md)。
 
 ## 许可证
 
-[Apache-2.0](LICENSE)。版权所有 © 2026 BukeLy。
+[Apache-2.0](../LICENSE)。版权所有 © 2026 BukeLy。
