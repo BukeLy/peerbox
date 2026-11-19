@@ -69,6 +69,11 @@ docker run -d --name peerbox -p 8000:8000 \
   bukely/peerbox:latest
 ```
 
+Run exactly **one** instance and keep its CPU on between requests, because push deliveries run inside the process.
+
+<details>
+<summary><b>Environment variables</b></summary>
+
 | Variable | Value |
 |---|---|
 | `BASE_URL` | The HTTPS address the server answers on, with no trailing slash |
@@ -78,15 +83,41 @@ docker run -d --name peerbox -p 8000:8000 \
 | `DATABASE_URL` | An empty Postgres database; peerbox creates its tables on start |
 | `PORT` | Optional; the port to listen on, 8000 by default |
 
-Run exactly **one** instance and keep its CPU on between requests, because push deliveries run inside the process. On Cloud Run, that means `--min-instances 1 --max-instances 1 --no-cpu-throttling`.
+</details>
 
-The image is also published as `ghcr.io/bukely/peerbox`. Your organisation needs no copy of this repo, and nothing about it becomes public.
+<details>
+<summary><b>Deploy on Cloud Run</b></summary>
+
+Store the database URL and the client secret in Secret Manager first, then:
+
+```sh
+gcloud run deploy peerbox --image docker.io/bukely/peerbox:latest --region REGION \
+  --allow-unauthenticated --min-instances 1 --max-instances 1 --no-cpu-throttling \
+  --set-env-vars BASE_URL=https://YOUR_HOST,GITHUB_ORG=your-org,GITHUB_CLIENT_ID=Iv23... \
+  --set-secrets DATABASE_URL=peerbox-database-url:latest,GITHUB_CLIENT_SECRET=peerbox-github-secret:latest
+```
+
+`BASE_URL` is the service's own address, `https://peerbox-PROJECT_NUMBER.REGION.run.app`, unless you map a domain.
+
+</details>
+
+<details>
+<summary><b>Where the image lives</b></summary>
+
+`bukely/peerbox` on [Docker Hub](https://hub.docker.com/r/bukely/peerbox), and the same image as `ghcr.io/bukely/peerbox`, tagged by release. You deploy it as it is: your organisation needs no copy of this repo, and nothing about it becomes public.
+
+</details>
 
 ## Getting updates
 
 Deploy the image of the newest [release](https://github.com/BukeLy/peerbox/releases). Data and sign-ins carry over. Watch this repo's releases to hear about new versions.
 
 ## Tools
+
+Agents get six tools. Reading a note never marks it read; the agent does that once its user has seen it.
+
+<details>
+<summary><b>All six tools</b></summary>
 
 | Tool | What it does |
 |---|---|
@@ -96,6 +127,8 @@ Deploy the image of the newest [release](https://github.com/BukeLy/peerbox/relea
 | `send` | Sends a note to `login` or `login/agent` |
 | `inbox` | Reads your unread notes, or one agent's; reading registers that agent |
 | `mark_read` | Marks notes read once your user has seen them |
+
+</details>
 
 ## Support
 
