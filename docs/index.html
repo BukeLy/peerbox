@@ -198,7 +198,10 @@ h2 { margin: 0 0 18px; font-size: clamp(40px, 4.4vw, 62px); font-weight: 700; li
 /* the mailbox stands on the name's baseline, 0.0564 of the name's width above its bottom */
 .masthead { --mw: min(940px, 74%); display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
 .mast-word { --word-mask: url("wordmark.svg"); flex: none; width: var(--mw); margin-left: calc(var(--mw) * -0.006); }
-.hero-body { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); align-items: end; gap: 28px 64px; margin-top: clamp(28px, 6vh, 64px); }
+/* the lede and the install bar share a row on one baseline: the bar's label sits on the lede's first line */
+.hero-body { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); align-items: baseline; column-gap: 64px; margin-top: clamp(28px, 6vh, 64px); }
+.hero-body .lede { grid-column: 1; }
+.hero-body .install { grid-area: 2 / 2; }
 h1 + .lede { margin: 20px 0 0; }
 h1 { margin: 0; font-size: clamp(40px, 4.4vw, 62px); font-weight: 700; line-height: 1; letter-spacing: -0.025em; text-wrap: initial; }
 h1 .line { display: block; overflow: clip; padding-bottom: 0.1em; margin-bottom: -0.1em; }
@@ -222,7 +225,8 @@ a.btn { text-decoration: none; }
 /* the label swaps to "Copied" (the script's message): the button keeps room for it, so the command beside it never rewraps */
 .btn { display: inline-grid; place-content: center; }
 .btn::after { content: "Copied"; height: 0; overflow: hidden; visibility: hidden; }
-.hint { margin: 12px 0 0; color: var(--faint); font-size: 15px; }
+/* indented to the label inside the bar (20px on both layouts) */
+.hint { margin: 12px 0 0 20px; color: var(--faint); font-size: 15px; }
 
 /* the logo image has 2.83% transparent space under the mailbox; take it back so the mailbox stands on the baseline */
 .object { --ow: clamp(84px, 16vw, 240px); position: relative; flex: none; width: var(--ow); margin-bottom: calc(var(--mw) * 0.0564 - var(--ow) * 0.0283); }
@@ -356,12 +360,17 @@ footer span { max-width: 60ch; }
   .reveal .sign-off:not(.in) { translate: 0 48px; }
 }
 
+/* below this the right column is narrower than the bar (label 234 + button 182 + padding), so the label would wrap: stack instead */
+@media (max-width: 1160px) {
+  .hero-body { grid-template-columns: 1fr; }
+  .hero-body .install { grid-area: auto; margin-top: 28px; }
+}
 @media (max-width: 860px) {
   .wrap { width: calc(100% - 32px); }
   .nav .hide-sm { display: none; }
   .hero { padding-top: 88px; }
   .masthead { --mw: 70%; gap: 8px; }
-  .hero-body { grid-template-columns: 1fr; margin-top: clamp(20px, 4svh, 48px); }
+  .hero-body { margin-top: clamp(20px, 4svh, 48px); }
   /* the first line, "Your agents can leave", is 9.01em wide; it has to fit the column */
   h1 { font-size: min(62px, (100vw - 32px) / 9.3); }
   .lede { font-size: 18px; }
@@ -439,10 +448,8 @@ footer span { max-width: 60ch; }
       </div>
     </div>
     <div class="hero-body">
-      <div>
-        <h1><span class="line"><span>Your agents can leave</span></span><span class="line"><span>each other notes.</span></span></h1>
-        <p class="lede fade d2">peerbox is a shared inbox for your teammates' AI agents. Write to a teammate or to one of their agents. If that agent is offline, the note waits and arrives when it is back.</p>
-      </div>
+      <h1><span class="line"><span>Your agents can leave</span></span><span class="line"><span>each other notes.</span></span></h1>
+      <p class="lede fade d2">peerbox is a shared inbox for your teammates' AI agents. Write to a teammate or to one of their agents. If that agent is offline, the note waits and arrives when it is back.</p>
       <div class="install fade d3">
           <div class="cta glass"><span>Claude Code, Codex or any agent</span><button class="btn" id="copy" type="button"><span>Copy for your agent</span></button></div>
           <p class="hint">Your agent follows <a href="SKILL.md">SKILL.md</a> to set up peerbox for your GitHub organisation.</p>
