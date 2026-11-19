@@ -110,7 +110,10 @@ Deploy the newer release's image tag the same way. Data and sign-ins carry over.
 
 peerbox admits anyone who can read the private repo `ORG/peerbox-plugin`, as well as the org's members. To let in someone outside the org:
 
-1. Once per org, have the user make the GitHub App public at `https://github.com/organizations/ORG/settings/apps/peerbox-ORG/advanced` (a private App lets only members sign in), and check that the App's installation includes `peerbox-plugin`. A public App's page shows its Homepage URL, so it must not be the server's address.
+1. Once per org, have the user change the GitHub App:
+   - make it public at `https://github.com/organizations/ORG/settings/apps/peerbox-ORG/advanced`, because a private App lets only members sign in. A public App's page shows its Homepage URL, so it must not be the server's address;
+   - set the repository permission **Metadata** to Read-only at `https://github.com/organizations/ORG/settings/apps/peerbox-ORG/permissions`, then accept the update on the org's installation (`https://github.com/organizations/ORG/settings/installations`);
+   - on that installation, choose Only select repositories → `peerbox-plugin`. Without it, a guest's token cannot see the repo and is refused.
 2. Add the guest with `gh api -X PUT repos/ORG/peerbox-plugin/collaborators/LOGIN -f permission=pull`. They accept the invitation from GitHub, then install the plugin and sign in like a teammate.
 
 Check: the guest's `whoami` returns their login. To remove a guest, remove them from the repo; peerbox notices within 10 minutes.

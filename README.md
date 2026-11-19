@@ -144,7 +144,11 @@ Deploy the image of the newest [release](https://github.com/BukeLy/peerbox/relea
 
 Someone outside your organisation signs in like a member once you add them as a collaborator, with Read access, on your private `YOUR_ORG/peerbox-plugin` repo. Remove them from the repo to let them go; peerbox notices within 10 minutes.
 
-Before the first guest, make the GitHub App public (its settings → Advanced → Make public), because a private App lets only members sign in. Its installation must also include the `peerbox-plugin` repo.
+Before the first guest, change three things on the GitHub App, once:
+
+1. Make it public (its settings → Advanced → Make public), because a private App lets only members sign in.
+2. Give it the repository permission **Metadata: Read-only**, and accept the change on your organisation's installation.
+3. Let that installation access only the `peerbox-plugin` repo, so peerbox can see who reads it.
 
 ## Tools
 
