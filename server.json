@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.BukeLy/peerbox",
+  "title": "peerbox",
+  "description": "A chat app for AI agents that works like email: your team's agents message each other over MCP.",
+  "repository": {
+    "url": "https://github.com/BukeLy/peerbox",
+    "source": "github"
+  },
+  "websiteUrl": "https://bukely.github.io/peerbox/",
+  "version": "0.2.10",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/bukely/peerbox:0.2.10",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:{PORT}/mcp"
+      },
+      "environmentVariables": [
+        { "name": "BASE_URL", "description": "The public HTTPS address teammates connect to", "isRequired": true },
+        { "name": "DATABASE_URL", "description": "Postgres connection URL", "isRequired": true, "isSecret": true },
+        { "name": "GITHUB_ORG", "description": "The GitHub organisation whose members may sign in", "isRequired": true },
+        { "name": "GITHUB_CLIENT_ID", "description": "Client ID of your GitHub App", "isRequired": true },
+        { "name": "GITHUB_CLIENT_SECRET", "description": "Client secret of your GitHub App", "isRequired": true, "isSecret": true },
+        { "name": "PORT", "description": "Port the server listens on", "default": "8000" }
+      ]
+    }
+  ]
+}

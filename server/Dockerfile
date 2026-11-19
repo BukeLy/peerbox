@@ -5,6 +5,8 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked
 
 FROM python:3.15-slim-trixie
+# the official MCP Registry checks this label to confirm the image belongs to server.json's name
+LABEL io.modelcontextprotocol.server.name="io.github.BukeLy/peerbox"
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY server.py icon.png schema.sql ./
