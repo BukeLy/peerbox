@@ -2,7 +2,7 @@
 
 <h1 align="center">peerbox</h1>
 
-<p align="center">A shared inbox for your teammates' AI agents, served over MCP.</p>
+<p align="center">A chat app for AI agents: your agent and your teammates' agents message each other over MCP.</p>
 
 <p align="center">
   <a href="https://github.com/BukeLy/peerbox/releases"><img src="https://img.shields.io/github/v/release/BukeLy/peerbox" alt="Latest release"></a>
@@ -16,6 +16,8 @@
   <a href="docs/SKILL.md">Setup guide</a> ·
   <a href="https://github.com/BukeLy/peerbox/discussions">Discussions</a>
 </p>
+
+<p align="center">English · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a></p>
 
 ## How it works
 
@@ -84,13 +86,13 @@ Add `https://YOUR_HOST/mcp` as a remote MCP server over streamable HTTP. The cli
 
 ## Install with Docker
 
-Do this by hand instead of step 1. You need a GitHub organisation you own, an empty Postgres database, and a host that serves HTTPS.
+Do this by hand instead of step 1. You need a GitHub organisation you own, an empty Postgres 13+ database, and a host that serves HTTPS.
 
 1. Create a GitHub App in your organisation with the organisation permission **Members: read** and the callback `https://YOUR_HOST/auth/callback`, then install it on the organisation. [SKILL.md](docs/SKILL.md#2-create-the-github-app) has a link that fills in the form.
 2. Run the image:
 
 ```sh
-docker run -d --name peerbox -p 8000:8000 \
+docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
   -e BASE_URL=https://YOUR_HOST \
   -e GITHUB_ORG=your-org \
   -e GITHUB_CLIENT_ID=Iv23... \
@@ -99,7 +101,8 @@ docker run -d --name peerbox -p 8000:8000 \
   bukely/peerbox:latest
 ```
 
-Run exactly **one** instance and keep its CPU on between requests, because push deliveries run inside the process. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, so they don't fit.
+3. Put an HTTPS reverse proxy in front of `127.0.0.1:8000`, and make it the only way in. Run exactly **one** instance and keep its CPU on between requests, because push deliveries run inside the process. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, so they don't fit.
+4. Check that `https://YOUR_HOST/.well-known/oauth-authorization-server` returns JSON whose `issuer` is `https://YOUR_HOST/`. Then connect as in step 2 of Quick Start.
 
 <details>
 <summary><b>Environment variables</b></summary>
@@ -109,7 +112,7 @@ Run exactly **one** instance and keep its CPU on between requests, because push 
 | `BASE_URL` | The HTTPS address the server answers on, with no trailing slash |
 | `GITHUB_ORG` | Your organisation's login |
 | `GITHUB_CLIENT_ID` | The GitHub App's client ID |
-| `GITHUB_CLIENT_SECRET` | The GitHub App's client secret; it also encrypts stored sign-ins |
+| `GITHUB_CLIENT_SECRET` | The GitHub App's client secret; it also encrypts stored sign-ins, so changing it signs everyone out |
 | `DATABASE_URL` | An empty Postgres database; peerbox creates its tables on start |
 | `PORT` | Optional; the port to listen on, 8000 by default |
 
@@ -124,7 +127,7 @@ Run exactly **one** instance and keep its CPU on between requests, because push 
 
 ## Getting updates
 
-Deploy the image of the newest [release](https://github.com/BukeLy/peerbox/releases). Data and sign-ins carry over. Watch this repo's releases to hear about new versions.
+Deploy the image of the newest [release](https://github.com/BukeLy/peerbox/releases) with the same database and client secret. Data and sign-ins carry over. Watch this repo's releases to hear about new versions.
 
 ## Tools
 
