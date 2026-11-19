@@ -9,14 +9,22 @@ Work through the steps in order. Each one ends on a check; do not start the next
 
 The organisation deploys the released image, so nothing about it becomes public. You need an owner of the org, for the GitHub App, and the CLI of the container host.
 
-## 1. Settle the public URL
+## 1. Choose the host and the public URL
 
-Choose the HTTPS origin the server will answer on before anything else, because the GitHub App's callback depends on it. Call it `BASE_URL`, with no trailing slash.
+Ask the user where the server will run. Any host fits that gives:
+
+- exactly one instance, never scaled to zero or past one, with CPU running between requests, because webhook deliveries run inside the process;
+- HTTPS terminated in front of the container, with no other way to reach it;
+- a Postgres 13 or newer that it can reach.
+
+Cloud Run with the settings in step 4 fits, and so does a VM running Docker behind a TLS proxy. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, which stops push; if the user names one, explain this and suggest a host that fits.
+
+Then settle the HTTPS origin the server will answer on, before anything else, because the GitHub App's callback depends on it. Call it `BASE_URL`, with no trailing slash.
 
 - Cloud Run: `https://peerbox-PROJECT_NUMBER.REGION.run.app`. Get the number with `gcloud projects describe PROJECT --format='value(projectNumber)'`.
 - Anything else: the domain the user will point at the server.
 
-Check: the user confirms `BASE_URL`.
+Check: the user confirms the host and `BASE_URL`.
 
 ## 2. Create the GitHub App
 
@@ -56,11 +64,7 @@ Deploy the image `docker.io/bukely/peerbox:VERSION` from Docker Hub; `ghcr.io/bu
 gh release view -R BukeLy/peerbox --json tagName -q .tagName
 ```
 
-The container listens on `$PORT`, or 8000 when `PORT` is unset. The host must meet three conditions:
-
-- exactly one instance, never scaled to zero or past one, because webhook deliveries run inside the process;
-- CPU kept running between requests, for the same reason;
-- HTTPS terminated in front of the container, with no other way to reach it.
+The container listens on `$PORT`, or 8000 when `PORT` is unset. Run it as step 1 requires: one instance, CPU always on, HTTPS in front.
 
 Set these environment variables. Keep the last two in the host's secret store:
 

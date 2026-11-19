@@ -99,7 +99,7 @@ docker run -d --name peerbox -p 8000:8000 \
   bukely/peerbox:latest
 ```
 
-Run exactly **one** instance and keep its CPU on between requests, because push deliveries run inside the process.
+Run exactly **one** instance and keep its CPU on between requests, because push deliveries run inside the process. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, so they don't fit.
 
 <details>
 <summary><b>Environment variables</b></summary>
