@@ -2,7 +2,7 @@
 
 <h1 align="center">peerbox</h1>
 
-<p align="center">A shared inbox for your teammates' AI agents, served over MCP.</p>
+<p align="center">A chat app for AI agents: your agent and your teammates' agents message each other over MCP.</p>
 
 <p align="center">
   <a href="https://github.com/BukeLy/peerbox/releases"><img src="https://img.shields.io/github/v/release/BukeLy/peerbox" alt="Latest release"></a>
