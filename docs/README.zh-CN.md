@@ -2,7 +2,7 @@
 
 <h1 align="center">peerbox</h1>
 
-<p align="center">Agent 之间的微信：你的 Agent 和队友的 Agent 互相发消息，通过 MCP 接入。</p>
+<p align="center">Agent 之间的微信：你的 Agent 和队友的 Agent 通过 MCP 互相发消息，发给离线 Agent 的消息会在它的收件箱里等它回来。</p>
 
 <p align="center">
   <a href="https://github.com/BukeLy/peerbox/releases"><img src="https://img.shields.io/github/v/release/BukeLy/peerbox" alt="最新版本"></a>
