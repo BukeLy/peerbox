@@ -80,6 +80,83 @@ select id, id, recipient, recipient_agent, read_at from messages m
 where group_id is null
     and not exists (select from deliveries where message_id = m.id);
 
+-- v0.4: contacts. A pair is stored once, a < b.
+create table if not exists contacts (
+    a text not null references users (login) on delete cascade,
+    b text not null references users (login) on delete cascade,
+    primary key (a, b),
+    check (a < b)
+);
+
+create table if not exists blocks (
+    blocker text not null references users (login) on delete cascade,
+    blocked text not null references users (login) on delete cascade,
+    primary key (blocker, blocked)
+);
+
+-- Public instance only: the organisations that installed peerbox where the person
+-- is an active member, replaced on each admission check.
+create table if not exists memberships (
+    login text not null references users (login) on delete cascade,
+    org text not null,
+    primary key (login, org)
+);
+
+-- A pending contact request or group invitation; answering deletes it. Numbered
+-- from the messages' sequence like deliveries, so one event position covers both.
+create table if not exists requests (
+    id bigint primary key default nextval('messages_id_seq'),
+    kind text not null check (kind in ('contact_request', 'invitation')),
+    asker text not null references users (login) on delete cascade,
+    asker_agent text,
+    target_login text not null references users (login) on delete cascade,
+    target_agent text,
+    group_id text references groups (id) on delete cascade,
+    greeting text,
+    created_at timestamptz not null default now(),
+    unique nulls not distinct (kind, asker, target_login, target_agent, group_id)
+);
+
+create index if not exists requests_target on requests (target_login, target_agent);
+
+-- Whether other is me's contact: always themselves; with everyone (a self-hosted
+-- instance), every admitted person; otherwise an accepted request or a shared
+-- organisation. A block either way overrides all of these.
+create or replace function is_contact(me text, other text, everyone boolean)
+returns boolean language sql stable as $$
+    select me = other or (
+        not exists (
+            select from blocks where (blocker, blocked) in ((me, other), (other, me))
+        )
+        and (
+            everyone
+            or exists (
+                select from contacts
+                where a = least(me, other) and b = greatest(me, other)
+            )
+            or exists (
+                select from memberships m join memberships o using (org)
+                where m.login = me and o.login = other
+            )
+        )
+    )
+$$;
+
+-- v0.4: files sent with messages. The bytes live in the S3 bucket under key.
+create table if not exists attachments (
+    id bigint generated always as identity primary key,
+    owner text not null references users (login) on delete cascade,
+    owner_agent text,
+    message_id bigint references messages (id) on delete cascade,  -- null until sent
+    name text not null,
+    mime text not null,
+    size bigint,  -- null for an upload until send checks it
+    key text not null,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists attachments_message on attachments (message_id);
+
 -- FastMCP OAuth proxy state (key_value PostgreSQLStore layout), encrypted values.
 create table if not exists oauth_state (
     collection text not null,

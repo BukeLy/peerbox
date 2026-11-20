@@ -18,6 +18,18 @@ jobs:
           POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
         options: --health-cmd pg_isready --health-interval 2s --health-retries 30
+      # Attachments' bucket. minio/minio is no longer on Docker Hub; this image runs
+      # the server without a command (which services can't pass) and makes the bucket.
+      minio:
+        image: bitnamilegacy/minio:2025.5.24
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_DEFAULT_BUCKETS: peerbox
+        ports: ["9000:9000"]
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 2s --health-retries 30
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
