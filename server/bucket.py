@@ -4,7 +4,7 @@ Callers deal in keys, bytes and URLs; every failure is a BucketError."""
 
 import hmac
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from urllib.parse import urlencode, urlsplit
 
@@ -23,13 +23,13 @@ class BucketError(Exception):
     """The bucket refused a request or could not be reached."""
 
 
-def upload_url(key: str) -> str:
-    """A URL that stores a file under key with one PUT, for an hour."""
+def upload_url(key: str) -> tuple[str, datetime]:
+    """A URL that stores a file under key with one PUT, and when it stops working."""
     return _presign("PUT", key)
 
 
-def download_url(key: str) -> str:
-    """A URL that fetches the file under key, for an hour."""
+def download_url(key: str) -> tuple[str, datetime]:
+    """A URL that fetches the file under key, and when it stops working."""
     return _presign("GET", key)
 
 
@@ -58,9 +58,8 @@ async def _send(
 ) -> httpx2.Response:
     try:
         async with httpx2.AsyncClient(timeout=30) as client:
-            response = await client.request(
-                method, _presign(method, key), content=content
-            )
+            url, _ = _presign(method, key)
+            response = await client.request(method, url, content=content)
     except httpx2.HTTPError as error:
         raise BucketError(f"{method} {key} failed: {error}") from error
     if not response.is_success and not (missing_ok and response.status_code == 404):
@@ -68,8 +67,9 @@ async def _send(
     return response
 
 
-def _presign(method: str, key: str) -> str:
-    """A URL that lets its holder make this one request for URL_SECONDS."""
+def _presign(method: str, key: str) -> tuple[str, datetime]:
+    """A URL that lets its holder make this one request for URL_SECONDS, and when it
+    stops working."""
     now = datetime.now(UTC)
     day = now.strftime("%Y%m%d")
     scope = f"{day}/{REGION}/s3/aws4_request"
@@ -106,4 +106,5 @@ def _presign(method: str, key: str) -> str:
     for part in (day, REGION, "s3", "aws4_request"):
         signing_key = hmac.digest(signing_key, part.encode(), "sha256")
     signature = hmac.new(signing_key, signed.encode(), sha256).hexdigest()
-    return f"{ENDPOINT}{path}?{query}&X-Amz-Signature={signature}"
+    url = f"{ENDPOINT}{path}?{query}&X-Amz-Signature={signature}"
+    return url, now + timedelta(seconds=URL_SECONDS)

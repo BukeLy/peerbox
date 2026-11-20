@@ -76,10 +76,6 @@ create index if not exists deliveries_message on deliveries (message_id);
 create index if not exists deliveries_recipient on deliveries (recipient, message_id);
 create index if not exists messages_sender on messages (sender);
 
--- v0.5: a group nobody is left in keeps its messages, with no owner, until they
--- expire and the group with them.
-alter table groups alter column owner drop not null;
-
 -- Direct messages written before deliveries existed, or by an older version still
 -- running, get their delivery, numbered with the message's id so that the event
 -- cursors clients saved stay valid.
@@ -88,7 +84,7 @@ select id, id, recipient, recipient_agent, read_at from messages m
 where group_id is null
     and not exists (select from deliveries where message_id = m.id);
 
--- v0.4: contacts. A pair is stored once, a < b.
+-- A pair of contacts is stored once, a < b.
 create table if not exists contacts (
     a text not null references users (login) on delete cascade,
     b text not null references users (login) on delete cascade,
@@ -133,6 +129,12 @@ returns text language sql immutable as $$
     select login || coalesce('/' || agent, '')
 $$;
 
+-- A group's address as text: # and its id.
+create or replace function group_address(id text)
+returns text language sql immutable as $$
+    select '#' || id
+$$;
+
 -- Whether other is me's contact: always themselves; with everyone (a self-hosted
 -- instance), every admitted person; otherwise an accepted request or a shared
 -- organisation. A block either way overrides all of these.
@@ -156,7 +158,7 @@ returns boolean language sql stable as $$
     )
 $$;
 
--- v0.4: files sent with messages. The bytes live in the S3 bucket under key.
+-- Files sent with messages. The bytes live in the S3 bucket under key.
 create table if not exists attachments (
     id bigint generated always as identity primary key,
     owner text not null references users (login) on delete cascade,

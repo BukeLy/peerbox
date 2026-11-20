@@ -37,9 +37,7 @@
   /* what sits in a bubble, a file or a picture, is a well in the glass */
   --well: rgba(255, 255, 255, 0.55);
   --well-edge: rgba(255, 255, 255, 0.85);
-  /* the sheet stands out of the paper: light on its top edge, a hairline, and a contact shadow under 8% */
   --relief: inset 0 1px 0 var(--hi), 0 1px 2px rgba(0, 46, 122, 0.06);
-  /* a disc is pressed into it */
   --deboss: inset 0 1px 2px rgba(0, 46, 122, 0.16), inset 0 -1px 0 rgba(255, 255, 255, 0.9);
   --grain: 0.06;
   --grain-ink: #0a2358;
@@ -95,7 +93,6 @@ body {
   -webkit-font-smoothing: antialiased;
   font-variant-numeric: tabular-nums;
 }
-/* the paper's grain, and the caustics the glass bar frosts, fading out under the title */
 body::before, body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 body::before { background: var(--caustics) 70% 0 / cover no-repeat; -webkit-mask: linear-gradient(#000, transparent 300px); mask: linear-gradient(#000, transparent 300px); opacity: 0.9; }
 body::after { background: var(--grain-ink); opacity: var(--grain); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
@@ -155,7 +152,6 @@ p { margin: 0; }
 .signout { display: block; width: 100%; min-height: 40px; padding: 0 10px; border: 0; border-radius: 10px; background: none; text-align: left; font-size: 14px; }
 .signout:hover { background: var(--hover); }
 
-/* the title row: the screen's name and its one finding; the inboxes, which filter the list, on the right */
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 40px; margin: 32px 0 20px; }
 .titles { min-width: 0; }
 #title { font-size: 26px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; font-variation-settings: "ROND" 80; }
@@ -173,7 +169,6 @@ p { margin: 0; }
 .inbox .fig b { color: var(--accent); font-size: 22px; font-weight: 600; line-height: 1.15; }
 .inbox .sub { color: var(--faint); font-size: 12px; white-space: nowrap; }
 
-/* the sheet: one paper surface, standing out by its top light and a hairline */
 .sheet {
   position: relative; min-height: 0; display: grid; grid-template-columns: 340px minmax(0, 1fr);
   border: 1px solid var(--border); border-radius: 20px; background: var(--sheet); box-shadow: var(--relief); overflow: hidden;
@@ -212,7 +207,6 @@ p { margin: 0; }
 .scope { margin: 2px 6px 8px; padding: 8px 10px; border-radius: 12px; background: var(--active); color: var(--soft); font-size: 13px; }
 .empty button, .scope button, .retry { padding: 0; border: 0; background: none; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 
-/* what an address is: a person, an agent or a group, drawn small before its name, or pressed into the paper beside a title */
 .kind { flex: none; width: 14px; height: 14px; color: var(--faint); }
 .disc { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--paper); box-shadow: var(--deboss); }
 .disc .kind { width: 20px; height: 20px; color: var(--soft); }
@@ -239,7 +233,6 @@ p { margin: 0; }
 .older:hover { background: var(--hover); }
 .day { width: max-content; margin: 20px auto 4px; padding: 3px 10px; border-radius: 999px; background: var(--ground-2); color: var(--faint); font-size: 12px; font-weight: 500; }
 
-/* a message: who wrote it to whom, the message itself, and where each of its deliveries stands */
 .msg { display: grid; grid-template-columns: minmax(0, 1fr); max-width: min(70ch + 34px, 88%); margin-top: 20px; }
 .msg.cont { margin-top: 6px; }
 .msg.mine { margin-left: auto; }
@@ -279,7 +272,6 @@ p { margin: 0; }
 .body th { color: var(--soft); font-weight: 600; }
 .body :is(th, td)[align="right"] { text-align: right; }
 .body :is(th, td)[align="center"] { text-align: center; }
-.body img { display: block; max-width: 100%; max-height: 300px; height: auto; border-radius: 10px; }
 .body hr { height: 1px; border: 0; background: var(--rule); }
 .quote { display: block; margin: 0 0 6px; padding-left: 10px; border-left: 2px solid var(--control); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--soft); font-size: 13px; text-decoration: none; }
 .quote:hover { color: var(--ink); }

@@ -13,17 +13,23 @@
       html: ({ text, block }) => (block ? `<p>${esc(text.trim())}</p>` : esc(text)),
       // a message's headings sit under the conversation's title, so they start at h4
       heading({ tokens, depth }) { const n = Math.min(6, depth + 3); return `<h${n}>${this.parser.parseInline(tokens)}</h${n}>`; },
+      // a remote image would load from its host as soon as it is shown, telling a stranger who reads the
+      // message and when, so it becomes a link that names the host; attachments come from our bucket and show inline
+      image({ href, text }) {
+        let host = "";
+        try { host = new URL(href, location.href).host; } catch { return esc(text); }
+        return `<a href="${esc(href)}">${esc(text || "Image")} (${esc(host)})</a>`;
+      },
     },
   });
-  const PURE = {
-    ALLOWED_TAGS: ["p", "br", "strong", "em", "del", "code", "pre", "a", "ul", "ol", "li", "input", "blockquote", "h4", "h5", "h6", "hr", "table", "thead", "tbody", "tr", "th", "td", "img"],
-    ALLOWED_ATTR: ["href", "title", "src", "alt", "start", "type", "checked", "disabled", "align"],
+  const ALLOWED_MARKUP = {
+    ALLOWED_TAGS: ["p", "br", "strong", "em", "del", "code", "pre", "a", "ul", "ol", "li", "input", "blockquote", "h4", "h5", "h6", "hr", "table", "thead", "tbody", "tr", "th", "td"],
+    ALLOWED_ATTR: ["href", "title", "start", "type", "checked", "disabled", "align"],
   };
   DOMPurify.addHook("afterSanitizeAttributes", (n) => {
     if (n.localName === "a") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer nofollow"); }
-    if (n.localName === "img") { n.setAttribute("loading", "lazy"); n.setAttribute("decoding", "async"); n.setAttribute("referrerpolicy", "no-referrer"); }
   });
-  const md = (text) => DOMPurify.sanitize(marked.parse(text), PURE);
+  const md = (text) => DOMPurify.sanitize(marked.parse(text), ALLOWED_MARKUP);
   // a preview or a quote is the message's words without its markup
   const plain = (text) => {
     const out = [];
@@ -39,12 +45,11 @@
     walk(marked.lexer(text));
     return out.join("").replace(/\s+/g, " ").trim();
   };
-  // what the page knows: who you are, your contacts and groups, the list and the open conversation
   const data = { me: null, name: null, people: {}, agents: {}, groups: {}, convs: null, waiting: {}, open: null };
   const state = { inbox: null, query: "", arrived: new Set(), failed: null, updated: null };
-  // attachment URLs already shown, kept while they're valid: a fresh presigned URL downloads the image again
+  // attachment URLs already shown, kept until shortly before they expire: a fresh presigned URL downloads the image again
   const urls = new Map();
-  const URL_MINUTES = 50; // the server signs them for 60
+  const URL_MARGIN = 10 * 60000;
   let now = new Date();
 
   const get = async (path) => {
@@ -55,23 +60,40 @@
   };
 
   // --- addresses ---------------------------------------------------------------------------------
-  // what an address is: a group "#id", an agent "login/agent", or a person
   const kind = (a) => (a.startsWith("#") ? "group" : a.includes("/") ? "agent" : "person");
   const owner = (a) => a.split("/")[0];
   const agentOf = (a) => a.split("/")[1];
   const mine = (a) => kind(a) !== "group" && owner(a) === data.me;
-  // you as "You", your agents by name, a group by its name, anyone else by their address
-  const label = (a) => (kind(a) === "group" ? data.groups[a]?.name ?? a : a === data.me ? "You" : mine(a) ? agentOf(a) : a);
+  // label: you as "You", your agents by name, a group by its name, anyone else by their address.
+  // detail: the line under a member's address. noun: what the details pane calls it.
+  const KIND = {
+    person: {
+      glyph: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3.2 13.5c.6-2.5 2.5-3.9 4.8-3.9s4.2 1.4 4.8 3.9"/>',
+      label: (a) => (a === data.me ? "You" : a),
+      detail: (a) => data.people[a]?.name ?? "Person",
+      noun: () => "Person",
+      subtitle: (a) => (a === data.me ? "You" : data.people[a]?.name ?? "Person"),
+    },
+    agent: {
+      glyph: '<rect x="2.5" y="4.5" width="11" height="9" rx="3"/><path d="M6 8.3v1.4M10 8.3v1.4M8 4.5V2.3"/>',
+      label: (a) => (mine(a) ? agentOf(a) : a),
+      detail: (a) => checked(a),
+      noun: (a) => (mine(a) ? "Your agent" : "Agent"),
+      subtitle: (a) => [mine(a) ? "Your agent" : `${owner(a)}'s agent`, data.agents[a]?.description, data.agents[a] && checked(a).toLowerCase()].filter(Boolean).join(" · "),
+    },
+    group: {
+      glyph: '<path d="M6.3 2.5 5 13.5M11 2.5 9.7 13.5M2.8 6h10.7M2.5 10h10.7"/>',
+      label: (a) => data.groups[a]?.name ?? a,
+      noun: () => "Group",
+      subtitle: (a) => { const g = data.groups[a]; return g ? `${g.members.length} members · owner ${g.owner}` : "You are no longer in this group"; },
+    },
+  };
+  const about = (a) => KIND[kind(a)];
+  const label = (a) => about(a).label(a);
   const addr = (a) => (kind(a) === "agent" && !mine(a)
     ? `<span class="addr"><span class="owner">${esc(owner(a))}/</span>${esc(agentOf(a))}</span>`
     : `<span class="addr">${esc(label(a))}</span>`);
-  // what an address is, drawn: a person, an agent, or a group
-  const GLYPH = {
-    person: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3.2 13.5c.6-2.5 2.5-3.9 4.8-3.9s4.2 1.4 4.8 3.9"/>',
-    agent: '<rect x="2.5" y="4.5" width="11" height="9" rx="3"/><path d="M6 8.3v1.4M10 8.3v1.4M8 4.5V2.3"/>',
-    group: '<path d="M6.3 2.5 5 13.5M11 2.5 9.7 13.5M2.8 6h10.7M2.5 10h10.7"/>',
-  };
-  const glyph = (a) => `<svg class="kind" viewBox="0 0 16 16" aria-hidden="true">${GLYPH[kind(a)]}</svg>`;
+  const glyph = (a) => `<svg class="kind" viewBox="0 0 16 16" aria-hidden="true">${about(a).glyph}</svg>`;
   const disc = (a) => `<span class="disc" aria-hidden="true">${glyph(a)}</span>`;
 
   // --- time ----------------------------------------------------------------------------------------
@@ -95,10 +117,10 @@
   // --- route and data --------------------------------------------------------------------------------
   const narrow = () => matchMedia("(max-width: 720px)").matches;
   // on a phone a pushed screen stands alone, so its title is the page's heading
-  const hn = () => (narrow() ? "h1" : "h2");
+  const titleTag = () => (narrow() ? "h1" : "h2");
   const route = () => {
-    const [, kind, key] = location.hash.match(/^#\/([ci])\/(.+)$/) || [];
-    return { key: key ? decodeURIComponent(key) : null, info: kind === "i" };
+    const [, pane, key] = location.hash.match(/^#\/([ci])\/(.+)$/) || [];
+    return { key: key ? decodeURIComponent(key) : null, info: pane === "i" };
   };
   const href = (key, info) => `#/${info ? "i" : "c"}/${encodeURIComponent(key)}`;
   // the conversation on screen: the one in the address, or on a wide screen the newest
@@ -140,12 +162,12 @@
     state.updated = now;
     for (const f of data.open?.messages.flatMap((m) => m.attachments) ?? []) {
       const kept = urls.get(f.id);
-      if (kept && now - kept.at < URL_MINUTES * 60000) f.url = kept.url;
-      else urls.set(f.id, { url: f.url, at: now });
+      if (kept && new Date(kept.expires) - now > URL_MARGIN) f.url = kept.url;
+      else urls.set(f.id, { url: f.url, expires: f.url_expires_at });
     }
   };
 
-  // --- the title row: the finding, and your inboxes as the list's filter ---------------------------------
+  // --- the title row ------------------------------------------------------------------------------------
   const renderHead = () => {
     const waits = Object.values(data.waiting).reduce((n, c) => n + c, 0);
     // the count leads to its cause: a link to the conversation that holds the oldest waiting message
@@ -210,15 +232,15 @@
   const files = (m) => (m.attachments.length ? `<div class="files">${m.attachments.map((f) => f.mime.startsWith("image/")
     ? `<a class="shot" href="${esc(f.url)}" target="_blank" rel="noopener"><img src="${esc(f.url)}" alt="${esc(f.name)}"></a>`
     : `<a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h6.5L15 6v11.5H5z"/><path d="M11.5 2.5V6H15"/></svg><span class="fname">${esc(f.name)}</span><span class="size">${esc(size(f.size ?? 0))}</span></a>`).join("")}</div>` : "");
-  const renderTranscript = (h) => {
+  const renderTranscript = (conversation) => {
     let day = "", prev = null;
-    const parts = [h.has_more ? `<button class="older" type="button">Show earlier messages</button>` : `<p class="kept">Messages are kept for 30 days.</p>`];
-    for (const m of h.messages) {
+    const parts = [conversation.has_more ? `<button class="older" type="button">Show earlier messages</button>` : `<p class="kept">Messages are kept for 30 days.</p>`];
+    for (const m of conversation.messages) {
       const d = new Date(m.sent_at);
       if (dayName(d) !== day) { day = dayName(d); prev = null; parts.push(`<p class="day">${esc(day)}</p>`); }
       const cont = prev && prev.from === m.from && prev.to === m.to && d - new Date(prev.sent_at) < 10 * 60000;
-      const parent = m.reply_to && h.messages.find((x) => x.id === m.reply_to);
-      const to = kind(h.key) !== "group" && !mine(m.from) ? m.to : null;
+      const parent = m.reply_to && conversation.messages.find((x) => x.id === m.reply_to);
+      const to = kind(conversation.key) !== "group" && !mine(m.from) ? m.to : null;
       parts.push(`
         <article class="msg${mine(m.from) ? " mine" : ""}${cont ? " cont" : ""}${state.arrived.has(m.id) ? " arrived" : ""}" id="m${m.id}" aria-label="${esc(label(m.from))}, ${esc(hm(d))}">
           <p class="meta"><span class="who">${addr(m.from)}</span>${to ? `<span class="to">to ${esc(to === data.me ? "you" : label(to))}</span>` : ""}<time datetime="${m.sent_at}">${esc(hm(d))}</time></p>
@@ -233,16 +255,10 @@
     }
     return parts.join("");
   };
-  const subtitle = (k) => {
-    if (kind(k) === "group") { const g = data.groups[k]; return g ? `${g.members.length} members · owner ${g.owner}` : "You are no longer in this group"; }
-    if (kind(k) === "person") return k === data.me ? "You" : data.people[k]?.name ?? "Person";
-    const a = data.agents[k];
-    return [mine(k) ? "Your agent" : `${owner(k)}'s agent`, a?.description, a && checked(k).toLowerCase()].filter(Boolean).join(" · ");
-  };
   const renderConvo = () => {
     const pane = $("#convo");
-    const h = data.open;
-    if (!h) {
+    const conversation = data.open;
+    if (!conversation) {
       delete pane.dataset.key;
       pane.innerHTML = state.failed
         ? `<div class="blank"><p>Couldn't load this conversation.</p><button class="retry" type="button">Try again</button></div>`
@@ -252,18 +268,18 @@
     const r = route();
     const scroller = $(".transcript", pane);
     const atEnd = !scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
-    const same = pane.dataset.key === h.key;
+    const same = pane.dataset.key === conversation.key;
     const top = scroller?.scrollTop ?? 0;
-    pane.dataset.key = h.key;
+    pane.dataset.key = conversation.key;
     pane.innerHTML = `
       <header class="convo-head">
         <a class="icon-btn back" href="#/" aria-label="Back to conversations"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
-        ${disc(h.key)}
-        <div class="titles"><${hn()} class="title" tabindex="-1">${addr(h.key)}</${hn()}><p>${esc(subtitle(h.key))}</p></div>
-        <button class="icon-btn info-btn" type="button" data-href="${href(h.key, !r.info)}" aria-label="Details" aria-expanded="${r.info}" aria-controls="info">
+        ${disc(conversation.key)}
+        <div class="titles"><${titleTag()} class="title" tabindex="-1">${addr(conversation.key)}</${titleTag()}><p>${esc(about(conversation.key).subtitle(conversation.key))}</p></div>
+        <button class="icon-btn info-btn" type="button" data-href="${href(conversation.key, !r.info)}" aria-label="Details" aria-expanded="${r.info}" aria-controls="info">
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.5h.01"/></svg></button>
       </header>
-      <div class="transcript" role="log" aria-label="Messages">${renderTranscript(h)}</div>`;
+      <div class="transcript" role="log" aria-label="Messages">${renderTranscript(conversation)}</div>`;
     const t = $(".transcript", pane);
     if (!same || atEnd) {
       t.scrollTop = t.scrollHeight;
@@ -271,7 +287,7 @@
       for (const img of t.querySelectorAll("img")) if (!img.complete) img.addEventListener("load", () => { t.scrollTop = t.scrollHeight; }, { once: true });
     } else {
       t.scrollTop = top;
-      if (h.messages.some((m) => state.arrived.has(m.id))) {
+      if (conversation.messages.some((m) => state.arrived.has(m.id))) {
         pane.insertAdjacentHTML("beforeend", `<button class="jump" type="button">New message</button>`);
       }
     }
@@ -280,22 +296,22 @@
   // --- the inspector -----------------------------------------------------------------------------------------
   const renderInfo = () => {
     const info = $("#info");
-    const h = data.open;
-    const show = Boolean(h && route().info);
+    const conversation = data.open;
+    const show = Boolean(conversation && route().info);
     info.hidden = !show;
     $(".sheet").classList.toggle("with-info", show);
     if (!show) return;
-    const k = h.key;
+    const k = conversation.key;
     const c = data.convs.find((x) => x.key === k);
     const head = (title, sub) => `
       <div class="info-head">
         <a class="icon-btn back" href="${href(k)}" aria-label="Back to the conversation"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
-        ${disc(k)}<div><${hn()} class="title" id="info-title" tabindex="-1">${title}</${hn()}><p>${esc(sub)}</p></div>
+        ${disc(k)}<div><${titleTag()} class="title" id="info-title" tabindex="-1">${title}</${titleTag()}><p>${esc(sub)}</p></div>
         <a class="icon-btn info-close" href="${href(k)}" aria-label="Close details"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></a>
       </div>`;
-    const who = (a) => `<p class="member">${glyph(a)}<span>${addr(a)}<span class="sub">${esc(kind(a) === "agent" ? checked(a) : data.people[a]?.name ?? "Person")}</span></span>${kind(k) === "group" && a === data.groups[k]?.owner ? '<span class="tag">Owner</span>' : ""}</p>`;
+    const who = (a) => `<p class="member">${glyph(a)}<span>${addr(a)}<span class="sub">${esc(about(a).detail(a))}</span></span>${kind(k) === "group" && a === data.groups[k]?.owner ? '<span class="tag">Owner</span>' : ""}</p>`;
     const counts = `<h3>Last 30 days</h3>
-      <p class="kv"><span>Messages</span><span>${h.messages.length}${h.has_more ? "+" : ""}</span></p>
+      <p class="kv"><span>Messages</span><span>${conversation.messages.length}${conversation.has_more ? "+" : ""}</span></p>
       <p class="kv"><span>Waiting in your inboxes</span><span>${c?.waiting ?? 0}</span></p>`;
     if (kind(k) === "group") {
       const g = data.groups[k];
@@ -303,11 +319,11 @@
         ? `${head(esc(g.name), k)}
           <p class="kv"><span>Owner</span><span class="addr">${esc(g.owner)}</span></p>
           <h3>${g.members.length} members</h3>${g.members.map(who).join("")}${counts}`
-        : `${head(esc(k), "Group")}<p class="kv"><span>Membership</span><span>You left this group</span></p>${counts}`;
+        : `${head(esc(k), about(k).noun(k))}<p class="kv"><span>Membership</span><span>You left this group</span></p>${counts}`;
     } else {
       const a = data.agents[k];
       const person = data.people[owner(k)];
-      info.innerHTML = `${head(addr(k), kind(k) === "agent" ? (mine(k) ? "Your agent" : "Agent") : "Person")}
+      info.innerHTML = `${head(addr(k), about(k).noun(k))}
         ${a?.description ? `<p class="kv"><span>Does</span><span>${esc(a.description)}</span></p>` : ""}
         ${kind(k) === "agent" ? `<p class="kv"><span>Acts for</span><span>${esc(person?.name ? `${person.name} (${owner(k)})` : owner(k))}</span></p>
         <p class="kv"><span>Inbox</span><span>${esc(checked(k))}</span></p>` : `<p class="kv"><span>Name</span><span>${esc(person?.name ?? "—")}</span></p>`}
@@ -425,14 +441,14 @@
     else if (t.dataset.href) location.hash = t.dataset.href;
     else if (t.matches(".jump")) { const s = $(".transcript"); s.scrollTo({ top: s.scrollHeight, behavior: reduced() ? "auto" : "smooth" }); t.remove(); }
     else if (t.matches(".older")) {
-      const h = data.open;
+      const conversation = data.open;
       t.disabled = true;
       try {
-        const earlier = await historyOf(h.key, h.messages[0].id);
+        const earlier = await historyOf(conversation.key, conversation.messages[0].id);
         const s = $(".transcript");
         const fromEnd = s.scrollHeight - s.scrollTop;
-        h.messages = [...earlier.messages, ...h.messages];
-        h.has_more = earlier.has_more;
+        conversation.messages = [...earlier.messages, ...conversation.messages];
+        conversation.has_more = earlier.has_more;
         render();
         const s2 = $(".transcript");
         s2.scrollTop = s2.scrollHeight - fromEnd;

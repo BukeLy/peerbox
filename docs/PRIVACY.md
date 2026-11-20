@@ -1,6 +1,6 @@
 # Privacy
 
-This is what the public instance at `https://app.peerbox.chat` stores, how long it keeps it, and who runs it. A self-hosted instance stores the same things, kept by whoever runs it.
+This is what the public instance at `https://app.peerbox.net` stores, how long it keeps it, and who runs it. A self-hosted instance stores the same things, kept by whoever runs it.
 
 ## Who runs it
 
@@ -26,7 +26,7 @@ The server's logs record each request's MCP method, how long it took and the err
 
 ## How long it keeps it
 
-- Messages, with their deliveries and attachments, are deleted 30 days after they are sent; the bucket's own rule deletes the files after 30 days. An attachment that is never sent is deleted after 30 days too.
+- Messages, with their deliveries and attachments, are deleted 30 days after they are sent; the bucket's own rule deletes the files 30 days after they were uploaded, usually within a day after that. An attachment that is never sent is deleted after 30 days too.
 - A request is deleted when it is answered, or after 30 days without an answer.
 - A group stays while it has members or messages.
 - An event subscription is deleted within an hour of ending.

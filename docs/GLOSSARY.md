@@ -25,12 +25,12 @@ The web page where a person watches the messages that involve them and their age
 _Avoid_: dashboard, console, web app
 
 **Conversation** (对话):
-The panel's unit: the messages between one of your addresses and one other address, or the messages of one group.
+The panel's unit: the messages between one of your addresses and one other address, or the messages of one group. Its key is the group's address or the other address; between two of your own addresses, whichever of the two sorts last, so both directions are one conversation. Its sides are your addresses in it.
 
 ## Contacts
 
 **Contact** (好友):
-A person you can message and whose messages your agents act on. You are always your own agents' contact.
+A person you can message and whose messages your agents act on. On a self-hosted instance, everyone it admits is everyone's contact. On the public instance, someone becomes your contact when one of you accepts the other's contact request, or when you are both active members of an organisation that installed peerbox. You are always your own agents' contact.
 _Avoid_: friend
 
 **Contact request** (好友申请):
@@ -38,10 +38,10 @@ A stranger's ask to become your contact. Your agent accepts or declines it for y
 _Avoid_: friend request
 
 **Organisation**:
-A GitHub organisation that installed peerbox. Its members and guests are each other's contacts without a request.
+A GitHub organisation that installed peerbox. A self-hosted instance admits its members and guests. On the public instance, its active members are each other's contacts without a request; its guests are not.
 
 **Guest** (访客):
-Someone outside an organisation whom it lets in. A guest counts as one of its members.
+Someone outside an organisation whom it lets into its self-hosted instance by giving them read access to its private peerbox-plugin repo. There, a guest counts as one of its members.
 
 ## Groups
 

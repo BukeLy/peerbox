@@ -15,7 +15,7 @@ Ask the user where the server will run. Any host fits that gives:
 
 - exactly one instance, never scaled to zero or past one, with CPU running between requests, because webhook deliveries run inside the process;
 - HTTPS terminated in front of the container, with no other way to reach it;
-- a Postgres 13 or newer that it can reach.
+- a Postgres 15 or newer that it can reach.
 
 A VM running Docker behind a TLS proxy fits, and so does a container platform set to one always-on instance. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, which stops push; if the user names one, explain this and suggest a host that fits.
 
@@ -43,7 +43,7 @@ Check: the Client ID starts with `Iv`, and the user has installed the App on ORG
 
 ## 3. Prepare Postgres
 
-Create an empty database on any Postgres 13 or newer that the host can reach. peerbox creates its tables when it starts. Give it its own user, with a password from `openssl rand -hex 24` so the URL needs no escaping.
+Create an empty database on any Postgres 15 or newer that the host can reach. peerbox creates its tables when it starts. Give it its own user, with a password from `openssl rand -hex 24` so the URL needs no escaping.
 
 For attachments, also create a bucket on any S3-compatible store, such as Cloudflare R2, with an access key that can read and write it. Add a lifecycle rule that deletes its objects 30 days after they are created, as peerbox deletes messages then. Without a bucket, attachments are off.
 

@@ -1,7 +1,7 @@
 """The panel: a read-only page where a person watches the conversations that involve
 them and their agents. GitHub sign-in sets an encrypted session cookie; JSON routes
 and a server-sent event stream feed the page. Nothing is written here, and viewing
-never marks a message read. server.py installs it with what it needs."""
+never marks a message read. server.py installs its routes."""
 
 import hmac
 from pathlib import Path
@@ -9,15 +9,18 @@ from secrets import token_urlsafe
 from urllib.parse import urlencode
 
 import httpx2
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import InvalidToken
 from pydantic_core import to_json
 from sse_starlette import EventSourceResponse
 from starlette.requests import Request
 from starlette.responses import FileResponse, RedirectResponse, Response
 
+import instance
 import mailbox
 
 HERE = Path(__file__).parent
+CALLBACK_URL = f"{instance.BASE_URL}/login/callback"
+SESSION_KEY = instance.fernet("peerbox-panel-session")
 SESSION_SECONDS = 8 * 3600
 PING_SECONDS = 30  # keeps proxies from closing a quiet stream
 COOKIE = {"httponly": True, "secure": True, "samesite": "lax"}
@@ -26,37 +29,23 @@ FILES = {path.name: path for path in (HERE / "panel").iterdir()} | {
 }
 
 
-async def changes(waiters, login: str):
-    """Server-sent events telling login's page to refetch: one whenever a message to
-    or from them is sent or read."""
-    with waiters.watch(login) as woken:
+async def changes(login: str):
+    """Server-sent events telling login's page to refetch: one whenever something of
+    theirs changes, such as a message or request sent, answered or read."""
+    with instance.waiters.watch(login) as woken:
         while True:
             await woken.wait()
             woken.clear()
             yield {"event": "changed", "data": ""}
 
 
-def install(
-    mcp,
-    *,
-    base_url: str,
-    client_id: str,
-    client_secret: str,
-    admits,
-    session_key: Fernet,
-    connect,
-    waiters,
-) -> None:
-    """Add the panel's routes to mcp. The GitHub App's client signs people in, and
-    admits(token, login) is the same check MCP sign-ins get. session_key encrypts
-    the session cookie, connect() opens a database connection, and waiters wakes a
-    person's streams."""
-    callback_url = f"{base_url}/login/callback"
+def install(mcp) -> None:
+    """Add the panel's routes to mcp."""
 
     def viewer(request: Request) -> str | None:
         """The signed-in person's login, from the session cookie."""
         try:
-            return session_key.decrypt(
+            return SESSION_KEY.decrypt(
                 request.cookies.get("peerbox_session", ""), ttl=SESSION_SECONDS
             ).decode()
         except InvalidToken:
@@ -79,7 +68,11 @@ def install(
     async def login(request: Request) -> Response:
         state = token_urlsafe(16)
         query = urlencode(
-            {"client_id": client_id, "redirect_uri": callback_url, "state": state}
+            {
+                "client_id": instance.GITHUB_CLIENT_ID,
+                "redirect_uri": CALLBACK_URL,
+                "state": state,
+            }
         )
         response = RedirectResponse(f"https://github.com/login/oauth/authorize?{query}")
         response.set_cookie("peerbox_state", state, max_age=600, **COOKIE)
@@ -98,10 +91,10 @@ def install(
             exchanged = await github.post(
                 "https://github.com/login/oauth/access_token",
                 data={
-                    "client_id": client_id,
-                    "client_secret": client_secret,
+                    "client_id": instance.GITHUB_CLIENT_ID,
+                    "client_secret": instance.GITHUB_CLIENT_SECRET,
                     "code": request.query_params.get("code", ""),
-                    "redirect_uri": callback_url,
+                    "redirect_uri": CALLBACK_URL,
                 },
             )
             token = exchanged.json().get("access_token")
@@ -112,14 +105,14 @@ def install(
                 headers={"Authorization": f"Bearer {token}"},
             )
         login = user.json()["login"]
-        if not await admits(token, login):
+        if not await instance.admit(token, login):
             return Response(
                 f"{login} is not admitted to this peerbox.", status_code=403
             )
         response = RedirectResponse("/", status_code=303)
         response.set_cookie(
             "peerbox_session",
-            session_key.encrypt(login.encode()).decode(),
+            SESSION_KEY.encrypt(login.encode()).decode(),
             max_age=SESSION_SECONDS,
             **COOKIE,
         )
@@ -138,7 +131,7 @@ def install(
             login = viewer(request)
             if login is None:
                 return signed_out()
-            async with connect() as db:
+            async with instance.get_db() as db:
                 data = await read(db, login, request)
             return Response(to_json(data), media_type="application/json")
 
@@ -160,12 +153,11 @@ def install(
         )
 
     async def stream(request: Request) -> Response:
-        """Tells the page to refetch whenever a message to or from its person is sent
-        or read."""
+        """Tells the page to refetch whenever something of its person's changes."""
         login = viewer(request)
         if login is None:
             return signed_out()
-        return EventSourceResponse(changes(waiters, login), ping=PING_SECONDS)
+        return EventSourceResponse(changes(login), ping=PING_SECONDS)
 
     routes = [
         ("/", "GET", page),

@@ -5,6 +5,7 @@ import subprocess
 import threading
 import time
 from base64 import b64encode
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import ANY
@@ -32,6 +33,7 @@ os.environ.setdefault("S3_SECRET_ACCESS_KEY", "minioadmin")
 os.environ.setdefault("S3_REGION", "us-east-1")
 
 import bucket
+import instance
 import mailbox
 import panel
 import server
@@ -40,6 +42,7 @@ from server import (
     SubscribeParams,
     UnsubscribeParams,
     add_contact,
+    admitted,
     answer,
     attach,
     contacts,
@@ -50,7 +53,6 @@ from server import (
     leave,
     mark_read,
     open_attachment,
-    org_member,
     remove_contact,
     send,
     set_aliases,
@@ -174,7 +176,7 @@ def github_token():
 async def test_active_org_member_is_admitted(github_token, monkeypatch):
     monkeypatch.setattr(mailbox, "GITHUB_ORG", os.environ["PEERBOX_TEST_ORG"])
     token = AccessToken(token=github_token, client_id="test", scopes=[], claims={})
-    assert await org_member(AuthContext(token=token, component=None))
+    assert await admitted(AuthContext(token=token, component=None))
 
 
 @pytest.mark.parametrize(
@@ -200,18 +202,18 @@ async def test_members_and_plugin_repo_guests_are_admitted(
 
     client = httpx2.AsyncClient
     monkeypatch.setattr(
-        server.httpx2,
+        httpx2,
         "AsyncClient",
         lambda **kwargs: client(transport=httpx2.MockTransport(github), **kwargs),
     )
-    assert await server.admits(os.urandom(8).hex(), None) is admitted
+    assert await instance.admit(os.urandom(8).hex(), None) is admitted
 
 
 async def test_a_change_wakes_only_the_people_it_involves(db):
     turing, church = signed_in("turing"), signed_in("church")
     await whoami(token=turing, db=db)
     await whoami(token=signed_in("kleene"), db=db)
-    watch = server.waiters.watch
+    watch = instance.waiters.watch
     async with Client(server.mcp):  # its listener hears the notifications
         with watch("turing") as to, watch("church") as by, watch("kleene") as other:
             sent = await send("turing", "hi", token=church, db=db)
@@ -222,6 +224,50 @@ async def test_a_change_wakes_only_the_people_it_involves(db):
             for woken in (to, by):
                 await asyncio.wait_for(woken.wait(), timeout=5)
             assert not other.is_set()
+
+
+async def test_groups_contacts_and_deleted_accounts_wake_whom_they_change(
+    db, monkeypatch
+):
+    turing, church = signed_in("turing"), signed_in("church")
+    await whoami(token=signed_in("kleene"), db=db)
+    await inbox(agent="bot", token=turing, db=db)
+    group = (await create_group("compilers", token=church, db=db))["group"]
+    await join(db, group, church, "turing")
+    revoked = httpx2.MockTransport(lambda request: httpx2.Response(204))
+    client = httpx2.AsyncClient
+    monkeypatch.setattr(
+        httpx2, "AsyncClient", lambda **kwargs: client(transport=revoked, **kwargs)
+    )
+    watch = instance.waiters.watch
+
+    async def woken(change, *expected) -> set[str]:
+        """Who of turing, church and kleene the change wakes."""
+        with watch("turing") as t, watch("church") as c, watch("kleene") as k:
+            await change
+            for login, event in [("turing", t), ("church", c), ("kleene", k)]:
+                if login in expected:
+                    await asyncio.wait_for(event.wait(), timeout=5)
+            await asyncio.sleep(0.1)
+            return {
+                login
+                for login, event in [("turing", t), ("church", c), ("kleene", k)]
+                if event.is_set()
+            }
+
+    async with Client(server.mcp):  # its listener hears the notifications
+        both = {"turing", "church"}
+        assert (
+            await woken(invite(group, "turing/bot", token=turing, db=db), *both) == both
+        )
+        assert (
+            await woken(leave(group, "turing/bot", token=turing, db=db), *both) == both
+        )
+        assert await woken(remove_contact("church", token=turing, db=db), *both) == both
+        # Here everyone is a contact, so kleene's panel listed church too.
+        everyone = {"turing", "church", "kleene"}
+        deleted = delete_account(token=church, db=db)
+        assert await woken(deleted, *everyone) == everyone
 
 
 @pytest.fixture
@@ -595,6 +641,22 @@ async def requests_of(token, db, agent=None) -> list[dict]:
     return (await inbox(agent=agent, token=token, db=db))["requests"]
 
 
+async def test_an_invitation_is_answered_only_as_the_address_it_invites(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    await whoami(token=church, db=db)
+    await inbox(agent="bot", token=turing, db=db)
+    group = (await create_group("compilers", token=church, db=db))["group"]
+    await invite(group, "turing/bot", token=church, db=db)
+    assert await requests_of(turing, db) == []
+    [invitation] = await requests_of(turing, db, "bot")
+    with pytest.raises(ToolError, match="answered as the address it invites"):
+        await answer(invitation["id"], True, token=turing, db=db)
+    joined = await answer(invitation["id"], True, from_agent="bot", token=turing, db=db)
+    assert joined["status"] == f"accepted: now in {group}"
+    [compilers] = (await contacts(token=church, db=db))["groups"]
+    assert compilers["members"] == ["church", "turing/bot"]
+
+
 async def people(token, db) -> list[str]:
     return [p["login"] for p in (await contacts(token=token, db=db))["people"]]
 
@@ -745,7 +807,7 @@ async def test_deleting_an_account_deletes_its_data_and_hands_over_its_groups(
 
     client = httpx2.AsyncClient
     monkeypatch.setattr(
-        server.httpx2,
+        httpx2,
         "AsyncClient",
         lambda **kwargs: client(transport=httpx2.MockTransport(outside), **kwargs),
     )
@@ -786,12 +848,12 @@ async def test_anyone_is_admitted_publicly_with_their_installed_organisations(
 
     client = httpx2.AsyncClient
     monkeypatch.setattr(
-        server.httpx2,
+        httpx2,
         "AsyncClient",
         lambda **kwargs: client(transport=httpx2.MockTransport(github), **kwargs),
     )
     async with Client(server.mcp):  # opens the database pool
-        assert await server.admits(os.urandom(8).hex(), "turing")
+        assert await instance.admit(os.urandom(8).hex(), "turing")
     orgs = await db.fetch(
         "select org from memberships where login = 'turing' order by org"
     )
@@ -955,7 +1017,7 @@ async def test_requests_wake_a_subscribed_webhook(db, webhook, public):
 
 
 def session(login: str) -> str:
-    key = server.fernet("peerbox-panel-session")
+    key = instance.fernet("peerbox-panel-session")
     return key.encrypt(login.encode()).decode()
 
 
@@ -980,7 +1042,7 @@ async def test_signing_in_to_the_panel_sets_a_session(db, monkeypatch):
     }
     client = httpx2.AsyncClient
     monkeypatch.setattr(
-        server.httpx2,
+        httpx2,
         "AsyncClient",
         lambda **kwargs: client(
             transport=httpx2.MockTransport(
@@ -1016,6 +1078,8 @@ async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
     turing, church = signed_in("turing"), signed_in("church")
     await inbox(agent="bot", token=turing, db=db)
     upload = await attach(name="plan.txt", token=church, db=db)
+    in_an_hour = datetime.now(UTC) + timedelta(seconds=bucket.URL_SECONDS)
+    assert abs(upload["upload_url_expires_at"] - in_an_hour) < timedelta(seconds=5)
     async with httpx2.AsyncClient() as client:
         await client.put(upload["upload_url"], content=b"step 1")
     asked = await send(
@@ -1049,6 +1113,8 @@ async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
     async with httpx2.AsyncClient() as client:
         file = messages[0]["attachments"][0]
         assert (await client.get(file["url"])).content == b"step 1"
+    expires = datetime.fromisoformat(file["url_expires_at"])
+    assert abs(expires - in_an_hour) < timedelta(seconds=5)
     with browser("church") as page:
         keys = [
             c["key"] for c in page.get("/api/conversations").json()["conversations"]
@@ -1056,6 +1122,26 @@ async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
     assert keys == ["turing", "turing/bot"]
     assert await texts(turing, db) == ["lunch?"]
     assert await texts(church, db) == ["on it"]
+
+
+async def test_two_of_your_agents_talk_in_one_conversation(db):
+    turing = signed_in("turing")
+    for agent in ("claude-code", "codex"):
+        await inbox(agent=agent, token=turing, db=db)
+    await send(
+        "turing/codex", "run the suite", from_agent="claude-code", token=turing, db=db
+    )
+    await send(
+        "turing/claude-code", "412 passed", from_agent="codex", token=turing, db=db
+    )
+    with browser("turing") as page:
+        [talk] = page.get("/api/conversations").json()["conversations"]
+        assert (talk["key"], talk["sides"]) == (
+            "turing/codex",
+            ["turing/claude-code", "turing/codex"],
+        )
+        messages = page.get("/api/conversations/turing/codex").json()["messages"]
+    assert [m["text"] for m in messages] == ["run the suite", "412 passed"]
 
 
 async def test_a_group_conversation_shows_every_members_messages(db):
@@ -1084,7 +1170,7 @@ async def test_the_stream_says_when_something_changed(db):
     turing, church = signed_in("turing"), signed_in("church")
     await whoami(token=turing, db=db)
     async with Client(server.mcp):  # its listener hears what is sent
-        stream = panel.changes(server.waiters, "turing")
+        stream = panel.changes("turing")
         changed = asyncio.create_task(anext(stream))
         await asyncio.sleep(0.1)  # the stream starts listening
         await send("turing", "hi", token=church, db=db)
