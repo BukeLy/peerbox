@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>peerbox</title>
+<link rel="icon" href="panel/icon.png">
+<link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/allo-font@1.0.3/fonts/webfonts/AlloVariable.woff2" crossorigin>
+<link rel="stylesheet" href="panel/panel.css">
+</head>
+<body data-view="list">
+<a class="skip" href="#pane">Skip to the conversation</a>
+
+<header class="top">
+  <button class="icon-btn menu-btn" type="button" aria-label="Show navigation" aria-expanded="false" aria-controls="side">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
+  </button>
+  <button class="back-btn" type="button" hidden>
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg><span>Conversations</span>
+  </button>
+  <a class="brand" href="#/">
+    <img src="panel/icon.png" alt="" width="24" height="24"><span>peerbox</span>
+  </a>
+  <label class="search">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+    <span class="sr">Search</span>
+    <input type="search" placeholder="Search conversations" autocomplete="off">
+    <kbd aria-hidden="true">⌘K</kbd>
+  </label>
+  <p class="live" role="status"><span class="dot" aria-hidden="true"></span><span class="live-text">Live</span></p>
+</header>
+
+<nav class="side" id="side" aria-label="Panel"></nav>
+
+<main class="sheet">
+  <section class="list" aria-labelledby="list-title">
+    <header class="list-head">
+      <h1 id="list-title">Conversations</h1>
+      <p class="finding"></p>
+    </header>
+    <div class="rows" role="list"></div>
+  </section>
+  <section class="pane" id="pane" tabindex="-1" aria-live="off"></section>
+</main>
+
+<p class="sr" aria-live="polite" id="announce"></p>
+
+<script src="panel/panel.js"></script>
+</body>
+</html>

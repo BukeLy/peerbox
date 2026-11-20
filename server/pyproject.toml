@@ -12,6 +12,7 @@ dependencies = [
     "httpx2>=2.16.2",
     "py-key-value-aio[postgresql]>=0.5.0",
     "pydantic>=2.14.3",
+    "sse-starlette>=3.7.0",
     "uvloop>=0.23.0",
 ]
 

@@ -7,6 +7,7 @@ import time
 from base64 import b64encode
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, quote, urlsplit
 
 import asyncpg
 import httpx2
@@ -16,6 +17,8 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken, AuthContext
 from fastmcp.utilities.types import Image
 from standardwebhooks import Webhook
+from starlette.requests import Request
+from starlette.testclient import TestClient
 
 os.environ.setdefault("BASE_URL", "http://localhost:8000")
 os.environ.setdefault("GITHUB_CLIENT_ID", "test")
@@ -55,6 +58,9 @@ from server import (
 )
 
 pytestmark = pytest.mark.anyio
+# server imports the panel to register its routes before it builds the app, so the
+# panel is reached through server, never imported first.
+panel = server.panel
 SCHEMA = (Path(__file__).parent.parent / "schema.sql").read_text()
 
 
@@ -825,3 +831,141 @@ async def test_requests_wake_a_subscribed_webhook(db, webhook, public):
         ("invitation", "church", group),
     ]
     assert events[0]["eventId"] == events[0]["cursor"] == str(request["id"])
+
+
+def session(login: str) -> str:
+    return panel.SESSION.encrypt(login.encode()).decode()
+
+
+async def asgi(scope, receive, send):
+    # TestClient takes granian's proxy-header wrapper for an ASGI 2 app.
+    await server.app(scope, receive, send)
+
+
+def browser(login: str | None = None) -> TestClient:
+    """The panel in a browser, signed in as login."""
+    client = TestClient(asgi, base_url="https://localhost")
+    if login:
+        client.cookies.set("peerbox_session", session(login))
+    return client
+
+
+async def test_signing_in_to_the_panel_sets_a_session(db, monkeypatch):
+    replies = {
+        "/login/oauth/access_token": {"access_token": os.urandom(8).hex()},
+        "/user": {"login": "turing"},
+        f"/user/memberships/orgs/{server.GITHUB_ORG}": {"state": "active"},
+    }
+    client = httpx2.AsyncClient
+    monkeypatch.setattr(
+        server.httpx2,
+        "AsyncClient",
+        lambda **kwargs: client(
+            transport=httpx2.MockTransport(
+                lambda request: httpx2.Response(200, json=replies[request.url.path])
+            ),
+            **kwargs,
+        ),
+    )
+    with browser() as page:
+        signin = page.get("/login", follow_redirects=False)
+        state = parse_qs(urlsplit(signin.headers["location"]).query)["state"][0]
+        done = page.get(
+            "/login/callback",
+            params={"code": "c", "state": state},
+            follow_redirects=False,
+        )
+        assert done.status_code == 303
+        assert "HttpOnly" in done.headers["set-cookie"]
+        assert page.get("/api/me").json()["login"] == "turing"
+
+
+def test_the_panel_api_needs_a_session():
+    with browser() as page:
+        assert page.get("/").status_code == 200
+        assert page.get("/panel/panel.js").status_code == 200
+        for path in ("/api/me", "/api/conversations", "/api/conversations/x"):
+            assert page.get(path).status_code == 401
+        assert page.get("/api/stream").status_code == 401
+
+
+async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    await inbox(agent="bot", token=turing, db=db)
+    upload = await attach(name="plan.txt", token=church, db=db)
+    async with httpx2.AsyncClient() as client:
+        await client.put(upload["upload_url"], content=b"step 1")
+    asked = await send(
+        "turing/bot", "review the plan", attachments=[upload["id"]], token=church, db=db
+    )
+    await send(
+        "church", "on it", reply_to=asked["id"], from_agent="bot", token=turing, db=db
+    )
+    await mark_read([asked["id"]], agent="bot", token=turing, db=db)
+    await send("turing", "lunch?", token=church, db=db)
+
+    with browser("turing") as page:
+        listed = page.get("/api/conversations").json()
+        [talk] = listed["conversations"]
+        assert (talk["key"], talk["sides"], talk["waiting"]) == (
+            "church",
+            ["turing", "turing/bot"],
+            1,
+        )
+        assert listed["waiting"] == {"turing": 1}
+        messages = page.get("/api/conversations/church").json()["messages"]
+    shown = [
+        (m["text"], [(d["to"], d["read_at"] is not None) for d in m["deliveries"]])
+        for m in messages
+    ]
+    assert shown == [
+        ("review the plan", [("turing/bot", True)]),
+        ("on it", [("church", False)]),
+        ("lunch?", [("turing", False)]),
+    ]
+    async with httpx2.AsyncClient() as client:
+        file = messages[0]["attachments"][0]
+        assert (await client.get(file["url"])).content == b"step 1"
+    with browser("church") as page:
+        keys = [
+            c["key"] for c in page.get("/api/conversations").json()["conversations"]
+        ]
+    assert keys == ["turing", "turing/bot"]
+    assert await texts(turing, db) == ["lunch?"]
+    assert await texts(church, db) == ["on it"]
+
+
+async def test_a_group_conversation_shows_every_members_messages(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    group = (await create_group("compilers", token=turing, db=db))["group"]
+    await join(db, group, "church", "kleene")
+    await send(group, "standup at ten", token=turing, db=db)
+    agreed = await send(group, "agreed", token=church, db=db)
+
+    with browser("kleene") as page:
+        [talk] = page.get("/api/conversations").json()["conversations"]
+        assert (talk["key"], talk["name"], talk["waiting"]) == (group, "compilers", 2)
+        messages = page.get(f"/api/conversations/{quote(group)}").json()["messages"]
+        earlier = page.get(
+            f"/api/conversations/{quote(group)}?before={agreed['id']}"
+        ).json()["messages"]
+    assert [(m["from"], m["text"]) for m in messages] == [
+        ("turing", "standup at ten"),
+        ("church", "agreed"),
+    ]
+    assert [d["to"] for d in messages[0]["deliveries"]] == ["church", "kleene"]
+    assert [m["text"] for m in earlier] == ["standup at ten"]
+
+
+async def test_the_stream_says_when_something_changed(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    await whoami(token=turing, db=db)
+    cookie = f"peerbox_session={session('turing')}".encode()
+    request = Request({"type": "http", "headers": [(b"cookie", cookie)]})
+    async with Client(server.mcp):  # its listener hears what is sent
+        response = await panel.stream(request)
+        changed = asyncio.create_task(anext(response.body_iterator))
+        await asyncio.sleep(0.1)  # the stream starts listening
+        await send("turing", "hi", token=church, db=db)
+        assert await asyncio.wait_for(changed, 5) == {"event": "changed", "data": ""}
+        await response.body_iterator.aclose()

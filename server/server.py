@@ -126,7 +126,9 @@ async def expire_hourly() -> None:
 @lifespan
 async def database(server):
     global pool
-    async with create_pool(DATABASE_URL, min_size=1, max_size=5) as pool:
+    # Supabase's session pool holds 15 connections: 4 here, the listener and the
+    # OAuth store's 2.
+    async with create_pool(DATABASE_URL, min_size=1, max_size=4) as pool:
         # Every statement is idempotent, so an empty or older database is brought
         # up to date here.
         await pool.execute((HERE / "schema.sql").read_text())
@@ -198,6 +200,13 @@ async def org_member(ctx: AuthContext) -> bool:
     return ctx.token is not None and await is_member(ctx.token)
 
 
+class OAuthStore(PostgreSQLStore):
+    # shortcut: overrides the store's private _create_pool, since it takes no pool
+    # size and opens 10 connections; recheck when py-key-value-aio changes.
+    async def _create_pool(self) -> Pool:
+        return await create_pool(DATABASE_URL, min_size=1, max_size=2)
+
+
 def caller_login(ctx) -> str:
     token = get_access_token()
     return token.claims.get("login", "anonymous") if token else "anonymous"
@@ -236,7 +245,7 @@ mcp = FastMCP(
         # its Members: read permission, so the default required scope ("user") fits.
         # Kept in Postgres so sign-ins survive redeploys and restarts.
         client_storage=FernetEncryptionWrapper(
-            PostgreSQLStore(
+            OAuthStore(
                 url=DATABASE_URL,
                 table_name="oauth_state",
                 auto_create=False,
@@ -1165,6 +1174,8 @@ events = MessageEvents()
 mcp.add_extension(events)
 mcp.add_middleware(LegacyEventsCapability())
 
+
+import panel  # noqa: F401  (registers the panel's routes)
 
 # Runs behind a TLS-terminating proxy (Cloud Run, a load balancer) that is the
 # only way to reach the container, so its forwarded headers are trusted.

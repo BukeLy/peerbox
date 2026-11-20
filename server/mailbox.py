@@ -13,6 +13,18 @@ MAX_ATTACHMENT = 10 * 1024 * 1024
 # A self-hosted instance admits only its organisation, so everyone is a contact.
 SELF_HOSTED = bool(os.environ.get("GITHUB_ORG"))
 # A writer may post to a group when their address, or they as a person, is a member.
+# The messages that involve login's side, them and their agents, each with its
+# conversation: the address on the other side, or the group.
+MINE = """
+    select m.*, case
+        when m.group_id is not null then '#' || m.group_id
+        when m.sender = $1 and not (m.recipient = $1 and m.recipient_agent is null)
+            then concat_ws('/', m.recipient, m.recipient_agent)
+        else concat_ws('/', m.sender, m.sender_agent)
+    end as key
+    from messages m
+    where m.sender = $1 or m.id in (select message_id from deliveries where recipient = $1)
+"""
 IN_GROUP = (
     "select exists(select from group_members where group_id = $1 and login = $2 "
     "and (agent is null or agent = $3))"
@@ -269,7 +281,7 @@ async def mark_read(
 ) -> int:
     # Without an agent it matches the person's deliveries and all their agents',
     # so clients that never name an agent here still clear their messages.
-    return await db.fetchval(
+    marked = await db.fetchval(
         "with updated as (update deliveries set read_at = now() "
         "where recipient = $1 and message_id = any($2) and read_at is null "
         "and ($3::text is null or recipient_agent = $3) "
@@ -278,6 +290,94 @@ async def mark_read(
         ids,
         agent,
     )
+    if marked:
+        await db.execute("notify notes")  # the panel shows who handled what
+    return marked
+
+
+async def conversations(db: Connection, login: str) -> dict:
+    """login's conversations, newest first: each with its last message, the addresses
+    of login's side in it and what waits there; and what waits in each of login's
+    inboxes."""
+    rows = await db.fetch(
+        f"with mine as ({MINE}), "
+        "sides as (select x.key, concat_ws('/', d.recipient, d.recipient_agent) as side, "
+        "d.read_at is null as waits, x.created_at from mine x "
+        "join deliveries d on d.message_id = x.id and d.recipient = $1 "
+        "union all select key, concat_ws('/', sender, sender_agent), false, created_at "
+        "from mine where sender = $1) "
+        "select distinct on (x.key) x.key, x.sender, x.sender_agent, x.body, "
+        "x.created_at, g.name, "
+        "(select array_agg(distinct side) from sides s where s.key = x.key) as sides, "
+        "(select count(*) from sides s where s.key = x.key and waits) as waiting, "
+        "(select min(created_at) from sides s where s.key = x.key and waits) "
+        "as waiting_since "
+        "from mine x left join groups g on '#' || g.id = x.key "
+        "order by x.key, x.id desc",
+        login,
+    )
+    inboxes = await db.fetch(
+        "select concat_ws('/', recipient, recipient_agent) as inbox, count(*) "
+        "from deliveries where recipient = $1 and read_at is null group by 1",
+        login,
+    )
+    listed = [
+        {
+            "key": row["key"],
+            "name": row["name"],
+            "last": {
+                "from": address(row["sender"], row["sender_agent"]),
+                "text": row["body"],
+                "sent_at": row["created_at"],
+            },
+            "sides": row["sides"],
+            "waiting": row["waiting"],
+            "waiting_since": row["waiting_since"],
+        }
+        for row in rows
+    ]
+    return {
+        "conversations": sorted(
+            listed, key=lambda c: c["last"]["sent_at"], reverse=True
+        ),
+        "waiting": {row["inbox"]: row["count"] for row in inboxes},
+    }
+
+
+async def history(
+    db: Connection, login: str, key: str, before: int | None, limit: int = 50
+) -> dict:
+    """One conversation's messages before message id before, oldest first, each with
+    its attachments and the state of each of its deliveries."""
+    rows = await db.fetch(
+        f"with mine as ({MINE}) select * from mine where key = $2 "
+        "and ($3::bigint is null or id < $3) order by id desc limit $4",
+        login,
+        key,
+        before,
+        limit + 1,
+    )
+    shown = rows[:limit][::-1]
+    deliveries = await db.fetch(
+        "select message_id, recipient, recipient_agent, read_at from deliveries "
+        "where message_id = any($1) order by id",
+        [row["id"] for row in shown],
+    )
+    by_message: dict[int, list[dict]] = {}
+    for delivery in deliveries:
+        by_message.setdefault(delivery["message_id"], []).append(
+            {
+                "to": address(delivery["recipient"], delivery["recipient_agent"]),
+                "read_at": delivery["read_at"],
+            }
+        )
+    return {
+        "messages": [
+            message | {"deliveries": by_message.get(message["id"], [])}
+            for message in await notes(db, shown)
+        ],
+        "has_more": len(rows) > limit,
+    }
 
 
 async def directory(db: Connection, login: str) -> dict:

@@ -9,6 +9,7 @@ FROM python:3.15-slim-trixie
 LABEL io.modelcontextprotocol.server.name="io.github.BukeLy/peerbox"
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
-COPY server.py mailbox.py bucket.py icon.png schema.sql ./
+COPY server.py mailbox.py bucket.py panel.py icon.png schema.sql ./
+COPY panel ./panel
 ENV PATH="/app/.venv/bin:$PATH"
 CMD exec granian --interface asgi --loop uvloop --http 1 --no-ws --host 0.0.0.0 --port "${PORT:-8000}" server:app

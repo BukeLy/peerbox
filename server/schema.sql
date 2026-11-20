@@ -71,6 +71,9 @@ create table if not exists deliveries (
 create index if not exists deliveries_unread
     on deliveries (recipient, recipient_agent, id) where read_at is null;
 create index if not exists deliveries_message on deliveries (message_id);
+-- The panel finds everything one person sent or was sent.
+create index if not exists deliveries_recipient on deliveries (recipient, message_id);
+create index if not exists messages_sender on messages (sender);
 
 -- Direct messages written before deliveries existed, or by an older version still
 -- running, get their delivery, numbered with the message's id so that the event
