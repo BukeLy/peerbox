@@ -1,13 +1,49 @@
 // The panel only watches: it never writes a message and never marks a delivery read.
-// Routes: #/c/<conversation>. Data comes from /api; /api/stream says when it changed.
+// Routes: #/ the list, #/c/<conversation> one conversation, #/i/<conversation> it with its details.
+// Data comes from /api; /api/stream says when something was sent or read, and the page refetches.
 (() => {
   const $ = (s, root = document) => root.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const D = { me: null, people: {}, agents: {}, groups: {}, convs: [], waiting: {}, open: null };
+
+  // --- message text: agents write GitHub markdown. Strangers' agents write it too and this page holds the session,
+  // so raw HTML is shown as text and marked's output is sanitised to the tags it makes
+  marked.use({
+    gfm: true, breaks: true,
+    renderer: {
+      html: ({ text, block }) => (block ? `<p>${esc(text.trim())}</p>` : esc(text)),
+      // a message's headings sit under the conversation's title, so they start at h4
+      heading({ tokens, depth }) { const n = Math.min(6, depth + 3); return `<h${n}>${this.parser.parseInline(tokens)}</h${n}>`; },
+    },
+  });
+  const PURE = {
+    ALLOWED_TAGS: ["p", "br", "strong", "em", "del", "code", "pre", "a", "ul", "ol", "li", "input", "blockquote", "h4", "h5", "h6", "hr", "table", "thead", "tbody", "tr", "th", "td", "img"],
+    ALLOWED_ATTR: ["href", "title", "src", "alt", "start", "type", "checked", "disabled", "align"],
+  };
+  DOMPurify.addHook("afterSanitizeAttributes", (n) => {
+    if (n.localName === "a") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer nofollow"); }
+    if (n.localName === "img") { n.setAttribute("loading", "lazy"); n.setAttribute("decoding", "async"); n.setAttribute("referrerpolicy", "no-referrer"); }
+  });
+  const md = (text) => DOMPurify.sanitize(marked.parse(text), PURE);
+  // a preview or a quote is the message's words without its markup
+  const plain = (text) => {
+    const out = [];
+    const walk = (ts) => {
+      for (const t of ts ?? []) {
+        if (t.type === "table") for (const cell of [...t.header, ...t.rows.flat()]) { walk(cell.tokens); out.push(" "); }
+        else if (t.items) { out.push(" "); walk(t.items); }
+        else if (t.tokens) walk(t.tokens);
+        else out.push(t.text ?? "");
+        if (/^(paragraph|heading|list_item|code|blockquote|space|hr|br)$/.test(t.type) || (t.type === "html" && t.block)) out.push(" ");
+      }
+    };
+    walk(marked.lexer(text));
+    return out.join("").replace(/\s+/g, " ").trim();
+  };
+  const D = { me: null, name: null, people: {}, agents: {}, groups: {}, convs: null, waiting: {}, open: null };
+  const state = { inbox: null, query: "", arrived: new Set(), failed: null, updated: null };
   // attachment URLs already shown, kept while they're valid: a fresh presigned URL downloads the image again
   const urls = new Map();
   const URL_MINUTES = 50; // the server signs them for 60
-  const state = { inbox: null, query: "", info: false, arrived: new Set() };
   let now = new Date();
 
   const get = async (path) => {
@@ -17,27 +53,27 @@
     return response.json();
   };
 
-  // --- addresses ---------------------------------------------------------------------------
+  // --- addresses ---------------------------------------------------------------------------------
   const isGroup = (a) => a.startsWith("#");
   const owner = (a) => a.split("/")[0];
   const agentOf = (a) => a.split("/")[1];
-  const mine = (a) => a === D.me || owner(a) === D.me;
-  // a person's tint, from their login; their agents take their owner's
-  const hue = (a) => (isGroup(a) ? 0 : [...owner(a)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7));
+  const mine = (a) => !isGroup(a) && owner(a) === D.me;
+  // you as "You", your agents by name, a group by its name, anyone else by their address
   const label = (a) => (isGroup(a) ? D.groups[a]?.name ?? a : a === D.me ? "You" : mine(a) ? agentOf(a) : a);
-  // "church/review-bot" with the owner quiet; your own agents by name; you as "You"
-  const addr = (a) => {
-    if (isGroup(a) || a === D.me || mine(a) || !a.includes("/")) return `<span class="addr">${esc(label(a))}</span>`;
-    return `<span class="addr"><span class="own">${esc(owner(a))}/</span>${esc(agentOf(a))}</span>`;
+  const addr = (a) => (!isGroup(a) && !mine(a) && a.includes("/")
+    ? `<span class="addr"><span class="owner">${esc(owner(a))}/</span>${esc(agentOf(a))}</span>`
+    : `<span class="addr">${esc(label(a))}</span>`);
+  // what an address is, drawn: a person, an agent, or a group
+  const GLYPH = {
+    person: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3.2 13.5c.6-2.5 2.5-3.9 4.8-3.9s4.2 1.4 4.8 3.9"/>',
+    agent: '<rect x="2.5" y="4.5" width="11" height="9" rx="3"/><path d="M6 8.3v1.4M10 8.3v1.4M8 4.5V2.3"/>',
+    group: '<path d="M6.3 2.5 5 13.5M11 2.5 9.7 13.5M2.8 6h10.7M2.5 10h10.7"/>',
   };
-  const avatar = (a, size = "") => {
-    const kind = isGroup(a) ? "group" : a.includes("/") ? "agent" : "person";
-    const letter = isGroup(a) ? "#" : (a.includes("/") ? agentOf(a) : a)[0];
-    const what = isGroup(a) ? "Group" : a.includes("/") ? `Agent of ${owner(a)}` : "Person";
-    return `<span class="av ${kind} ${size}" style="--h:${hue(a)}" role="img" aria-label="${esc(what)}">${esc(letter)}</span>`;
-  };
+  const kind = (a) => (isGroup(a) ? "group" : a.includes("/") ? "agent" : "person");
+  const glyph = (a) => `<svg class="kind" viewBox="0 0 16 16" aria-hidden="true">${GLYPH[kind(a)]}</svg>`;
+  const disc = (a) => `<span class="disc" aria-hidden="true">${glyph(a)}</span>`;
 
-  // --- time ----------------------------------------------------------------------------------
+  // --- time ----------------------------------------------------------------------------------------
   const sameDay = (a, b) => a.toDateString() === b.toDateString();
   const hm = (d) => d.toTimeString().slice(0, 5);
   const dayName = (d) => {
@@ -46,33 +82,36 @@
   };
   const stamp = (d) => (sameDay(d, now) ? hm(d) : dayName(d));
   const since = (d) => {
-    const m = Math.round((now - d) / 60000);
-    if (m < 1) return "just now";
+    const m = Math.floor((now - d) / 60000);
+    if (m < 1) return "under a minute";
     if (m < 60) return `${m} min`;
-    return m < 24 * 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : dayName(d);
+    return m < 24 * 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 1440)} d`;
   };
-  const ago = (d) => { const s = since(d); return /min$/.test(s) ? `${s} ago` : s; };
+  const ago = (d) => (now - d < 60000 ? "just now" : `${since(d)} ago`);
+  const checked = (a) => { const seen = D.agents[a]?.last_seen; return seen ? `Checked ${ago(new Date(seen))}` : "Not checked yet"; };
   const size = (n) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
-  // --- data ------------------------------------------------------------------------------------
+  // --- route and data --------------------------------------------------------------------------------
+  const narrow = () => matchMedia("(max-width: 720px)").matches;
+  // on a phone a pushed screen stands alone, so its title is the page's heading
+  const hn = () => (narrow() ? "h1" : "h2");
   const route = () => {
-    const [, id] = location.hash.match(/^#\/c\/(.+)$/) || [];
-    return { id: id ? decodeURIComponent(id) : null };
+    const [, kind, key] = location.hash.match(/^#\/([ci])\/(.+)$/) || [];
+    return { key: key ? decodeURIComponent(key) : null, info: kind === "i" };
   };
-  const href = (id) => `#/c/${encodeURIComponent(id)}`;
-  const narrow = () => matchMedia("(max-width: 640px)").matches;
+  const href = (key, info) => `#/${info ? "i" : "c"}/${encodeURIComponent(key)}`;
+  // the conversation on screen: the one in the address, or on a wide screen the newest
+  const openKey = () => route().key || (!narrow() && D.convs?.[0]?.key) || null;
+  const historyOf = (key, before) => get(`/api/conversations/${encodeURIComponent(key)}${before ? `?before=${before}` : ""}`);
   const visible = () => {
     let convs = D.convs;
     if (state.inbox) convs = convs.filter((c) => c.sides.includes(state.inbox));
     if (state.query) {
       const q = state.query.toLowerCase();
-      convs = convs.filter((c) => c.key.toLowerCase().includes(q) || label(c.key).toLowerCase().includes(q) || c.last.text.toLowerCase().includes(q));
+      convs = convs.filter((c) => [c.key, label(c.key), c.last.from, c.last.text].some((s) => s.toLowerCase().includes(q)));
     }
     return convs;
   };
-  // the conversation on screen: the one in the address, or on a wide screen the newest
-  const openKey = () => route().id || (!narrow() && D.convs[0]?.key) || null;
-  const historyOf = (key, before) => get(`/api/conversations/${encodeURIComponent(key)}${before ? `?before=${before}` : ""}`);
 
   const load = async () => {
     const [me, list] = await Promise.all([get("/api/me"), get("/api/conversations")]);
@@ -80,15 +119,24 @@
     D.people = Object.fromEntries(me.people.map((p) => [p.login, p]));
     D.agents = Object.fromEntries(me.people.flatMap((p) => p.agents.map((a) => [`${p.login}/${a.name}`, a])));
     D.groups = Object.fromEntries(me.groups.map((g) => [g.address, g]));
-    const seen = new Map(D.convs.map((c) => [c.key, c.last.sent_at]));
-    if (seen.size) for (const c of list.conversations) if (seen.get(c.key) !== c.last.sent_at) state.arrived.add(c.key);
+    D.name = D.people[D.me]?.name;
+    const seen = D.convs && new Map(D.convs.map((c) => [c.key, c.last.sent_at]));
+    if (seen) for (const c of list.conversations) if (seen.get(c.key) !== c.last.sent_at) state.arrived.add(c.key);
     D.convs = list.conversations;
     D.waiting = list.waiting;
     const key = openKey();
     const old = D.open?.key === key ? new Set(D.open.messages.map((m) => m.id)) : null;
-    D.open = key ? { key, ...(await historyOf(key)) } : null;
-    if (old) for (const m of D.open.messages) if (!old.has(m.id)) state.arrived.add(m.id);
+    try {
+      D.open = key ? { key, ...(await historyOf(key)) } : null;
+      state.failed = null;
+    } catch (e) {
+      if (e.message === "signed out") throw e;
+      D.open = null;
+      state.failed = { key, at: now };
+    }
+    if (old) for (const m of D.open?.messages ?? []) if (!old.has(m.id)) state.arrived.add(m.id);
     now = new Date();
+    state.updated = now;
     for (const f of D.open?.messages.flatMap((m) => m.attachments) ?? []) {
       const kept = urls.get(f.id);
       if (kept && now - kept.at < URL_MINUTES * 60000) f.url = kept.url;
@@ -96,273 +144,336 @@
     }
   };
 
-  // --- sidebar -----------------------------------------------------------------------------------
-  const renderSide = () => {
-    const waitingConvs = D.convs.filter((c) => c.waiting).length;
-    const inboxes = [D.me, ...Object.keys(D.agents).filter((a) => owner(a) === D.me)].map((a) => {
-      const waiting = D.waiting[a] ?? 0;
-      const seen = D.agents[a]?.last_seen;
-      const sub = a === D.me ? "Messages to you" : seen ? `Checked ${ago(new Date(seen))}` : "Not checked yet";
-      return `<button class="inbox-item" type="button" data-inbox="${esc(a)}" aria-pressed="${state.inbox === a}">
-          ${avatar(a, "sm")}<span><span class="addr">${esc(label(a))}</span><span class="sub">${esc(sub)}</span></span>
-          ${waiting ? `<span class="count" aria-label="${waiting} waiting">${waiting}</span>` : ""}
+  // --- the title row: the finding, and your inboxes as the list's filter ---------------------------------
+  const renderHead = () => {
+    const waits = Object.values(D.waiting).reduce((n, c) => n + c, 0);
+    // the count leads to its cause: a link to the conversation that holds the oldest waiting message
+    const oldest = D.convs.filter((c) => c.waiting_since).sort((a, b) => new Date(a.waiting_since) - new Date(b.waiting_since))[0];
+    const where = oldest && `<a href="${href(oldest.key)}">${esc(label(oldest.key))}</a>`;
+    $(".finding").innerHTML = waits && oldest
+      ? `<b>${waits === 1 ? "1 message waits" : `${waits} messages wait`}</b> in your inboxes. ${waits === 1 ? "It" : "The oldest"} has waited ${esc(since(new Date(oldest.waiting_since)))}, in ${isGroup(oldest.key) ? where : `your conversation with ${where}`}.`
+      : D.convs.length ? "Nothing waits in your inboxes." : "No conversations in the last 30 days.";
+    const inboxes = [D.me, ...Object.keys(D.agents).filter(mine)];
+    $(".inboxes").innerHTML = inboxes.map((a) => {
+      const n = D.waiting[a] ?? 0;
+      return `<button class="inbox" type="button" data-inbox="${esc(a)}" aria-pressed="${state.inbox === a}">
+          <span class="label addr">${esc(label(a))}</span>
+          <span class="fig">${n ? `<b>${n}</b>waiting` : "Nothing waiting"}</span>
+          <span class="sub">${esc(a === D.me ? `Sent to ${D.me}` : checked(a))}</span>
         </button>`;
     }).join("");
-    $("#side").innerHTML = `
-      <a class="nav-item" href="#/c/" aria-current="page">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11v7h-11z"/><path d="m2.5 4.5 5.5 4 5.5-4"/></svg>Conversations
-        ${waitingConvs ? `<span class="count" aria-label="${waitingConvs} with messages waiting">${waitingConvs}</span>` : ""}
-      </a>
-      <h2>Your inboxes</h2>
-      ${inboxes}
-      <p class="me">${avatar(D.me, "sm")}<b class="addr">${esc(D.me)}</b><a href="#signout">Sign out</a></p>`;
   };
 
-  // --- list --------------------------------------------------------------------------------------
+  // --- the list ------------------------------------------------------------------------------------------
   const preview = (c) => {
-    const speaker = isGroup(c.key) || (mine(c.last.from) && c.last.from !== c.key) ? `${label(c.last.from)}: ` : "";
-    return speaker + c.last.text;
+    const speaker = c.last.from !== c.key && (isGroup(c.key) || mine(c.last.from)) ? `${label(c.last.from)}: ` : "";
+    return speaker + plain(c.last.text);
   };
-  const renderList = (r) => {
-    const rows = $(".rows");
+  const renderList = () => {
+    const key = D.open?.key ?? state.failed?.key;
     const convs = visible();
-    // the finding: what waits on your side, and the longest wait
-    const waits = D.convs.reduce((n, c) => n + c.waiting, 0);
-    const oldest = D.convs.map((c) => c.waiting_since).filter(Boolean).sort()[0];
-    $(".finding").innerHTML = waits
-      ? `<b>${waits} ${waits === 1 ? "message waits" : "messages wait"}</b> on your side. The oldest has waited ${esc(since(new Date(oldest)))}.`
-      : "Nothing is waiting on your side.";
-    rows.innerHTML = convs.length ? convs.map((c) => `
-      <a class="row${c.waiting ? " waiting" : ""}${state.arrived.has(c.key) ? " arrived" : ""}" role="listitem" href="${href(c.key)}" ${r.id === c.key ? 'aria-current="page"' : ""}
-         aria-label="${esc(label(c.key))}${c.waiting ? `, ${c.waiting} waiting` : ""}">
-        ${avatar(c.key)}<span class="t">${addr(c.key)}${isGroup(c.key) ? ` <span class="own">${esc(c.key)}</span>` : ""}</span>
+    const why = state.query ? `No conversation's name or latest message mentions “${esc(state.query)}”. <button class="clear-search" type="button">Clear search</button>`
+      : state.inbox ? `Nothing in the last 30 days involves ${esc(state.inbox === D.me ? "you directly" : label(state.inbox))}. <button type="button" data-inbox="${esc(state.inbox)}">Show all</button>`
+      : "When one of your agents writes to someone, or someone writes to you or your agents, the conversation shows here.";
+    // the pressed inbox can be out of view (a phone scrolls it away), so the list says it is filtered
+    const scope = state.inbox && convs.length ? `<p class="scope">Showing conversations that involve ${esc(state.inbox === D.me ? "you directly" : label(state.inbox))}. <button type="button" data-inbox="${esc(state.inbox)}">Show all</button></p>` : "";
+    $(".rows").innerHTML = scope + (convs.length ? convs.map((c) => `
+      <a class="row${c.waiting ? " waiting" : ""}${state.arrived.has(c.key) ? " arrived" : ""}" href="${href(c.key)}" data-key="${esc(c.key)}"${c.key === key ? ' aria-current="page"' : ""}>
+        <span class="name">${glyph(c.key)}${addr(c.key)}</span>
         <time datetime="${c.last.sent_at}">${esc(stamp(new Date(c.last.sent_at)))}</time>
-        <span class="p">${esc(preview(c))}</span>
-      </a>`).join("")
-      : `<p class="empty">${state.query ? `No conversation mentions “${esc(state.query)}”.` : "When your agents message someone, or someone's agent messages yours, the conversation appears here."}</p>`;
+        <span class="preview">${esc(preview(c))}</span>
+        ${c.waiting ? `<span class="count"><span class="sr">, waiting: </span>${c.waiting}</span>` : ""}
+      </a>`).join("") : `<p class="empty">${why}</p>`);
   };
 
-  // --- transcript ----------------------------------------------------------------------------------
+  // --- the conversation ------------------------------------------------------------------------------------
+  const tick = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>`;
+  const chev = `<svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>`;
+  const whose = (a) => (a === D.me ? "your" : `${esc(label(a))}'s`);
   const deliveryLine = (m) => {
     const ds = m.deliveries;
-    const clock = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>`;
-    const tick = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>`;
     if (!ds.length) return "";
     if (ds.length === 1) {
-      const d = ds[0];
-      const whose = d.to === D.me ? "your" : `${label(d.to)}'s`;
-      const wait = since(new Date(m.sent_at));
-      if (d.read_at) return `<p class="state">${tick}${d.to === D.me ? "Picked up from your inbox" : `Handled by ${esc(label(d.to))}`} at ${esc(hm(new Date(d.read_at)))}</p>`;
-      return `<p class="state${mine(d.to) ? " waiting" : ""}">${clock}Waiting in ${esc(whose)} inbox${wait === "just now" ? "" : ` for ${esc(wait)}`}</p>`;
+      const [d] = ds;
+      return d.read_at
+        ? `<p class="state">${tick}Handled by ${esc(d.to === D.me ? "you" : label(d.to))} at ${esc(hm(new Date(d.read_at)))}</p>`
+        : `<p class="state"><span class="slot" aria-hidden="true"></span><span class="waits">Waiting in ${whose(d.to)} inbox for ${esc(since(new Date(m.sent_at)))}</span></p>`;
     }
     const open = ds.filter((d) => !d.read_at);
-    return open.length
-      ? `<p class="state${open.some((d) => mine(d.to)) ? " waiting" : ""}" title="${esc(open.map((d) => d.to).join(", "))}">${clock}Waiting for ${open.length} of ${ds.length}</p>`
-      : `<p class="state">${tick}Handled by all ${ds.length}</p>`;
+    const summary = open.length
+      ? `<span class="slot" aria-hidden="true"></span><span class="waits">Waiting in ${open.length} of ${ds.length} inboxes</span>`
+      : `${tick}Handled by all ${ds.length}`;
+    return `<details class="deliveries"><summary>${summary}${chev}</summary><ul>${ds.map((d) => `
+        <li class="${d.read_at ? "" : "waits"}"><span>${addr(d.to)}</span><span>${d.read_at ? `Handled ${esc(hm(new Date(d.read_at)))}` : `Waiting ${esc(since(new Date(m.sent_at)))}`}</span></li>`).join("")}</ul></details>`;
   };
   const files = (m) => (m.attachments.length ? `<div class="files">${m.attachments.map((f) => f.mime.startsWith("image/")
-    ? `<a class="shot" href="${esc(f.url)}" target="_blank" rel="noopener"><img src="${esc(f.url)}" alt="${esc(f.name)}" loading="lazy"></a>`
-    : `<a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.5L12 4v10.5H4z"/><path d="M9.5 1.5V4H12"/></svg><span>${esc(f.name)}</span><span class="size">${esc(size(f.size ?? 0))}</span></a>`).join("")}</div>` : "");
+    ? `<a class="shot" href="${esc(f.url)}" target="_blank" rel="noopener"><img src="${esc(f.url)}" alt="${esc(f.name)}"></a>`
+    : `<a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h6.5L15 6v11.5H5z"/><path d="M11.5 2.5V6H15"/></svg><span class="fname">${esc(f.name)}</span><span class="size">${esc(size(f.size ?? 0))}</span></a>`).join("")}</div>` : "");
   const renderTranscript = (h) => {
-    let day = "";
-    const parts = h.has_more ? [`<button class="older" type="button">Earlier messages</button>`] : [];
+    let day = "", prev = null;
+    const parts = [h.has_more ? `<button class="older" type="button">Show earlier messages</button>` : `<p class="kept">Messages are kept for 30 days.</p>`];
     for (const m of h.messages) {
       const d = new Date(m.sent_at);
-      if (dayName(d) !== day) { day = dayName(d); parts.push(`<p class="day">${esc(day)}</p>`); }
+      if (dayName(d) !== day) { day = dayName(d); prev = null; parts.push(`<p class="day">${esc(day)}</p>`); }
+      const cont = prev && prev.from === m.from && prev.to === m.to && d - new Date(prev.sent_at) < 10 * 60000;
       const parent = m.reply_to && h.messages.find((x) => x.id === m.reply_to);
-      const showTo = !isGroup(h.key) && m.to !== h.key && m.from === h.key ? m.to : null;
+      const to = !isGroup(h.key) && !mine(m.from) ? m.to : null;
       parts.push(`
-        <article class="msg${mine(m.from) && m.from !== h.key ? " mine" : ""}${state.arrived.has(m.id) ? " arrived" : ""}" id="m${m.id}" aria-label="From ${esc(m.from)} at ${esc(hm(d))}">
-          ${avatar(m.from)}
-          <header><span class="who">${addr(m.from)}</span>${showTo ? `<span class="to">to ${esc(showTo === D.me ? "you" : label(showTo))}</span>` : ""}<time datetime="${m.sent_at}">${esc(hm(d))}</time></header>
-          ${parent ? `<p class="quote"><a href="#m${parent.id}">Re: ${esc(parent.text)}</a></p>` : ""}
-          <p class="body">${esc(m.text)}</p>
-          ${files(m)}
+        <article class="msg${mine(m.from) ? " mine" : ""}${cont ? " cont" : ""}${state.arrived.has(m.id) ? " arrived" : ""}" id="m${m.id}" aria-label="${esc(label(m.from))}, ${esc(hm(d))}">
+          <p class="meta"><span class="who">${addr(m.from)}</span>${to ? `<span class="to">to ${esc(to === D.me ? "you" : label(to))}</span>` : ""}<time datetime="${m.sent_at}">${esc(hm(d))}</time></p>
+          <div class="note glass">
+            ${parent ? `<a class="quote" href="#m${parent.id}" data-jump="m${parent.id}">${esc(plain(parent.text))}</a>` : ""}
+            <div class="body">${md(m.text)}</div>
+            ${files(m)}
+          </div>
           ${deliveryLine(m)}
         </article>`);
+      prev = m;
     }
-    // where a composer would be: when your waiting agent last looked, and how long messages are kept
-    const late = [...new Set(h.messages.flatMap((m) => m.deliveries).filter((d) => !d.read_at && mine(d.to)).map((d) => d.to))].filter((a) => D.agents[a]?.last_seen);
-    const note = late.map((a) => `<b>${esc(label(a))}</b> last checked its inbox at ${esc(hm(new Date(D.agents[a].last_seen)))}.`).join(" ");
-    parts.push(`<p class="end">${note ? note + " " : ""}Messages are deleted 30 days after they're sent.</p>`);
     return parts.join("");
   };
   const subtitle = (k) => {
-    if (isGroup(k)) { const g = D.groups[k]; return g ? `${g.members.length} members · owned by ${g.owner}` : "You left this group"; }
-    if (!k.includes("/")) return k === D.me ? "You" : D.people[k] ? "Contact" : "";
+    if (isGroup(k)) { const g = D.groups[k]; return g ? `${g.members.length} members · owner ${g.owner}` : "You are no longer in this group"; }
+    if (!k.includes("/")) return k === D.me ? "You" : D.people[k]?.name ?? "Person";
     const a = D.agents[k];
-    const who = mine(k) ? "Your agent" : `${owner(k)}'s agent`;
-    return `${who}${a?.description ? ` · ${a.description}` : ""}${a?.last_seen ? ` · checked its inbox ${ago(new Date(a.last_seen))}` : ""}`;
+    return [mine(k) ? "Your agent" : `${owner(k)}'s agent`, a?.description, a && checked(k).toLowerCase()].filter(Boolean).join(" · ");
   };
-  const renderInfo = (c, h) => {
-    const k = h.key;
-    const checked = (a) => (D.agents[a]?.last_seen ? `Checked its inbox ${ago(new Date(D.agents[a].last_seen))}` : a.includes("/") ? "Agent" : "Person");
-    if (isGroup(k)) {
-      const g = D.groups[k];
-      if (!g) return `<h3>Group</h3><p class="kv"><span>Address</span><span class="addr">${esc(k)}</span></p>`;
-      return `<h3>Group</h3>
-        <p class="kv"><span>Name</span><span>${esc(g.name)}</span></p>
-        <p class="kv"><span>Address</span><span class="addr">${esc(k)}</span></p>
-        <p class="kv"><span>Owner</span><span class="addr">${esc(g.owner)}</span></p>
-        <h3>${g.members.length} members</h3>
-        ${g.members.map((m) => `<p class="member">${avatar(m, "sm")}<span>${addr(m)}<span class="sub">${esc(checked(m))}</span></span>${m === g.owner ? '<span class="tag">Owner</span>' : ""}</p>`).join("")}`;
-    }
-    return `<h3>${k.includes("/") ? "Agent" : "Person"}</h3>
-      <p class="kv"><span>Address</span><span class="addr">${esc(k)}</span></p>
-      ${D.agents[k]?.last_seen ? `<p class="kv"><span>Last checked</span><span>${esc(ago(new Date(D.agents[k].last_seen)))}</span></p>` : ""}
-      <h3>Your side here</h3>
-      ${(c?.sides ?? []).map((a) => `<p class="member">${avatar(a, "sm")}<span>${addr(a)}<span class="sub">${esc(a === D.me ? "Person" : checked(a))}</span></span></p>`).join("")}
-      <h3>This conversation</h3>
-      <p class="kv"><span>Messages, last 30 days</span><span class="num">${h.messages.length}${h.has_more ? "+" : ""}</span></p>
-      <p class="kv"><span>Waiting on your side</span><span class="num">${c?.waiting ?? 0}</span></p>`;
-  };
-  const renderConversation = () => {
+  const renderConvo = () => {
+    const pane = $("#convo");
     const h = D.open;
-    const pane = $("#pane");
-    if (!h) { pane.className = "pane"; delete pane.dataset.key; pane.innerHTML = `<p class="blank"><img src="panel/icon.png" alt="">No conversation open.</p>`; return; }
-    const c = D.convs.find((x) => x.key === h.key);
+    if (!h) {
+      delete pane.dataset.key;
+      pane.innerHTML = state.failed
+        ? `<div class="blank"><p>Couldn't load this conversation.</p><button class="retry" type="button">Try again</button></div>`
+        : `<div class="blank"><img src="panel/icon.png" alt="">${D.convs.length ? "<p>Choose a conversation.</p>" : ""}</div>`;
+      return;
+    }
+    const r = route();
     const scroller = $(".transcript", pane);
-    const atBottom = !scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
-    const prevKey = pane.dataset.key;
-    const prevTop = scroller?.scrollTop ?? 0;
+    const atEnd = !scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
+    const same = pane.dataset.key === h.key;
+    const top = scroller?.scrollTop ?? 0;
     pane.dataset.key = h.key;
-    pane.className = `pane${state.info ? " with-info" : ""}`;
     pane.innerHTML = `
-      <header class="pane-head">
-        ${avatar(h.key)}
-        <div class="titles"><h2>${addr(h.key)}</h2><p>${esc(subtitle(h.key))}</p></div>
-        <button class="icon-btn info-btn" type="button" aria-label="Details" aria-expanded="${state.info}" aria-controls="info">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7.2V11M8 5h.01"/></svg>
-        </button>
+      <header class="convo-head">
+        <a class="icon-btn back" href="#/" aria-label="Back to conversations"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
+        ${disc(h.key)}
+        <div class="titles"><${hn()} class="title" tabindex="-1">${addr(h.key)}</${hn()}><p>${esc(subtitle(h.key))}</p></div>
+        <button class="icon-btn info-btn" type="button" data-href="${href(h.key, !r.info)}" aria-label="Details" aria-expanded="${r.info}" aria-controls="info">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.5h.01"/></svg></button>
       </header>
-      <div class="transcript" role="log" aria-label="Messages">${renderTranscript(h)}</div>
-      ${state.info ? `<aside class="info" id="info" aria-label="Details">${renderInfo(c, h)}</aside>` : ""}`;
+      <div class="transcript" role="log" aria-label="Messages">${renderTranscript(h)}</div>`;
     const t = $(".transcript", pane);
-    const fresh = h.messages.some((m) => state.arrived.has(m.id));
-    if (prevKey !== h.key || atBottom) {
+    if (!same || atEnd) {
       t.scrollTop = t.scrollHeight;
       // an image that loads later grows the transcript; stay at the end
       for (const img of t.querySelectorAll("img")) if (!img.complete) img.addEventListener("load", () => { t.scrollTop = t.scrollHeight; }, { once: true });
-    }
-    else {
-      t.scrollTop = prevTop;
-      if (fresh) {
-        const b = document.createElement("button");
-        b.className = "jump"; b.type = "button"; b.textContent = "New message";
-        b.onclick = () => { t.scrollTo({ top: t.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); b.remove(); };
-        pane.append(b);
+    } else {
+      t.scrollTop = top;
+      if (h.messages.some((m) => state.arrived.has(m.id))) {
+        pane.insertAdjacentHTML("beforeend", `<button class="jump" type="button">New message</button>`);
       }
     }
   };
 
-  // --- the whole screen -------------------------------------------------------------------------------
+  // --- the inspector -----------------------------------------------------------------------------------------
+  const renderInfo = () => {
+    const info = $("#info");
+    const h = D.open;
+    const show = Boolean(h && route().info);
+    info.hidden = !show;
+    $(".sheet").classList.toggle("with-info", show);
+    if (!show) return;
+    const k = h.key;
+    const c = D.convs.find((x) => x.key === k);
+    const head = (title, sub) => `
+      <div class="info-head">
+        <a class="icon-btn back" href="${href(k)}" aria-label="Back to the conversation"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
+        ${disc(k)}<div><${hn()} class="title" id="info-title" tabindex="-1">${title}</${hn()}><p>${esc(sub)}</p></div>
+        <a class="icon-btn info-close" href="${href(k)}" aria-label="Close details"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></a>
+      </div>`;
+    const who = (a) => `<p class="member">${glyph(a)}<span>${addr(a)}<span class="sub">${esc(a.includes("/") ? checked(a) : D.people[a]?.name ?? "Person")}</span></span>${isGroup(k) && a === D.groups[k]?.owner ? '<span class="tag">Owner</span>' : ""}</p>`;
+    const counts = `<h3>Last 30 days</h3>
+      <p class="kv"><span>Messages</span><span>${h.messages.length}${h.has_more ? "+" : ""}</span></p>
+      <p class="kv"><span>Waiting in your inboxes</span><span>${c?.waiting ?? 0}</span></p>`;
+    if (isGroup(k)) {
+      const g = D.groups[k];
+      info.innerHTML = g
+        ? `${head(esc(g.name), k)}
+          <p class="kv"><span>Owner</span><span class="addr">${esc(g.owner)}</span></p>
+          <h3>${g.members.length} members</h3>${g.members.map(who).join("")}${counts}`
+        : `${head(esc(k), "Group")}<p class="kv"><span>Membership</span><span>You left this group</span></p>${counts}`;
+    } else {
+      const a = D.agents[k];
+      const person = D.people[owner(k)];
+      info.innerHTML = `${head(addr(k), k.includes("/") ? (mine(k) ? "Your agent" : "Agent") : "Person")}
+        ${a?.description ? `<p class="kv"><span>Does</span><span>${esc(a.description)}</span></p>` : ""}
+        ${k.includes("/") ? `<p class="kv"><span>Acts for</span><span>${esc(person?.name ? `${person.name} (${owner(k)})` : owner(k))}</span></p>
+        <p class="kv"><span>Inbox</span><span>${esc(checked(k))}</span></p>` : `<p class="kv"><span>Name</span><span>${esc(person?.name ?? "—")}</span></p>`}
+        <h3>Your side</h3>${(c?.sides ?? []).map(who).join("")}${counts}`;
+    }
+  };
+
+  // --- the whole screen ------------------------------------------------------------------------------------------
+  const view = () => (!route().key ? "list" : route().info ? "info" : "detail");
+  // one h1 a screen: on a phone the pushed conversation's title is it, and the list's title steps down
+  const pageTitle = (tag) => {
+    const old = $("#title");
+    if (old.localName !== tag) old.outerHTML = `<${tag} id="title">Conversations</${tag}>`;
+  };
   const render = () => {
-    const r = route();
-    document.body.dataset.view = r.id ? "detail" : "list";
-    renderSide();
-    renderList(r);
-    renderConversation();
-    $(".back-btn").hidden = !r.id;
-    document.title = `${r.id ? label(r.id) : "Conversations"} · peerbox`;
+    $(".signin")?.remove();
+    document.body.dataset.view = view();
+    pageTitle(narrow() && route().key ? "p" : "h1");
+    $(".who").textContent = D.me;
+    $(".account-btn .initial").textContent = D.me[0];
+    $(".menu-who").innerHTML = `<b>${esc(D.name || D.me)}</b>Signed in as ${esc(D.me)}`;
+    renderHead();
+    renderList();
+    renderInfo(); // first: it narrows the transcript, which then scrolls to its end
+    renderConvo();
+    const key = route().key;
+    document.title = `${key ? label(key) : "Conversations"} · peerbox`;
     state.arrived.clear();
+  };
+  const loading = () => {
+    const bar = (w) => `<span class="bar" style="width:${w}"></span>`;
+    $(".inboxes").innerHTML = ["4em", "6em"].map((w) => `
+      <div class="inbox" aria-hidden="true"><span class="label">${bar(w)}</span><span class="fig"><b>${bar("1.4em")}</b></span><span class="sub">${bar("7em")}</span></div>`).join("");
+    $(".rows").innerHTML = Array.from({ length: 6 }, (_, i) => `
+      <div class="row" aria-hidden="true"><span class="name">${bar(`${8 + (i % 3) * 3}em`)}</span><time>${bar("2.5em")}</time><span class="preview">${bar(`${12 + (i % 2) * 4}em`)}</span></div>`).join("");
+    $("#convo").innerHTML = `<div class="blank" aria-busy="true"><p class="sr">Loading</p></div>`;
+  };
+  const failed = () => {
+    document.body.dataset.view = "failed";
+    $(".finding").textContent = "";
+    $(".inboxes").innerHTML = "";
+    $(".rows").innerHTML = `<p class="empty">Couldn't load your conversations. <button class="retry" type="button">Try again</button></p>`;
   };
   const signedOut = () => {
     document.body.dataset.view = "signed-out";
-    document.title = "peerbox";
-    $(".sheet").innerHTML = `
-      <section class="signin" aria-labelledby="signin-title">
-        <img src="panel/icon.png" alt="" width="72" height="72">
-        <h1 id="signin-title">Watch your agents talk</h1>
-        <p>See the conversations of the agents you run on this peerbox: who wrote to whom, and what still waits in an inbox. Nothing here sends a message or marks one read.</p>
-        <a class="btn" href="/login">Sign in with GitHub</a>
-      </section>`;
+    document.title = "Sign in · peerbox";
+    $(".head")?.remove();
+    $(".signin").hidden = false;
   };
   // refetch, then draw; a second change during a fetch refetches once more
-  let loading = null, again = false;
+  let busy = null, again = false;
   const refresh = async () => {
-    if (loading) { again = true; return loading; }
-    loading = (async () => {
+    if (busy) { again = true; return busy; }
+    busy = (async () => {
       try { await load(); render(); }
-      catch (e) { if (e.message === "signed out") signedOut(); else console.error(e); }
-      loading = null;
+      catch (e) {
+        if (e.message === "signed out") signedOut();
+        else if (!D.convs) failed();
+        else live(false, `Couldn't refresh · updated ${hm(state.updated)}`);
+        console.error(e);
+      }
+      busy = null;
       if (again) { again = false; await refresh(); }
     })();
-    return loading;
+    return busy;
+  };
+  const live = (on, text) => {
+    $(".live").classList.toggle("on", on);
+    $(".live").classList.toggle("off", !on);
+    $(".live-text").textContent = text ?? (on ? "Live" : "Reconnecting");
   };
 
-  // --- input -------------------------------------------------------------------------------------------
+  // --- input -----------------------------------------------------------------------------------------------------
+  let from = null;
   addEventListener("hashchange", async () => {
-    document.body.classList.remove("menu-open");
+    const before = from;
+    from = route().key;
     if (D.open?.key !== openKey()) await refresh(); else render();
-    if (route().id) $("#pane").focus({ preventScroll: true });
+    const v = view();
+    if (v === "detail" && before !== from) $(".convo-head .title")?.focus({ preventScroll: true });
+    else if (v === "info") $("#info-title")?.focus({ preventScroll: true });
+    else if (v === "list" && before) $(`.row[data-key="${CSS.escape(before)}"]`)?.focus();
   });
-  addEventListener("resize", () => { if (D.me) { if (D.open?.key !== openKey()) refresh(); else render(); } });
+  let wasNarrow = narrow();
+  addEventListener("resize", () => {
+    if (!D.me) return;
+    if (D.open?.key !== openKey()) refresh();
+    else if (wasNarrow !== narrow()) render();
+    wasNarrow = narrow();
+  });
+  const menu = (open) => {
+    $("#account-menu").hidden = !open;
+    $(".account-btn").setAttribute("aria-expanded", open);
+  };
   document.addEventListener("click", async (e) => {
+    if (!e.target.closest(".account")) menu(false);
     const t = e.target.closest("button, a");
     if (!t) return;
-    if (t.matches(".menu-btn")) {
-      const open = document.body.classList.toggle("menu-open");
-      t.setAttribute("aria-expanded", open);
-    } else if (t.matches(".back-btn")) {
-      location.hash = "#/c/";
-    } else if (t.matches(".info-btn")) {
-      state.info = !state.info; render();
-      $(".info-btn").focus();
-    } else if (t.matches(".older")) {
-      const h = D.open;
-      const earlier = await historyOf(h.key, h.messages[0].id);
-      const t2 = $(".transcript");
-      const fromBottom = t2.scrollHeight - t2.scrollTop;
-      h.messages = [...earlier.messages, ...h.messages];
-      h.has_more = earlier.has_more;
-      render();
-      const t3 = $(".transcript");
-      t3.scrollTop = t3.scrollHeight - fromBottom;
-    } else if (t.dataset.inbox) {
+    if (t.matches(".account-btn")) menu($("#account-menu").hidden);
+    else if (t.matches(".signout")) { await fetch("/logout", { method: "POST" }); location.replace("/"); }
+    else if (t.dataset.inbox) {
+      const inList = t.closest(".rows"); // Show all goes away with the line it is on, so focus moves to the first row
       state.inbox = state.inbox === t.dataset.inbox ? null : t.dataset.inbox;
       render();
-    } else if (t.getAttribute("href") === "#signout") {
-      e.preventDefault();
-      await fetch("/logout", { method: "POST" });
-      location.reload();
+      if (inList) $(".rows a.row")?.focus();
+    }
+    else if (t.matches(".retry")) { loading(); refresh(); }
+    else if (t.matches(".clear-search")) { const q = $(".search input"); q.value = ""; state.query = ""; renderList(); q.focus(); }
+    else if (t.dataset.jump) {
+      e.preventDefault(); // the hash holds the route
+      const m = document.getElementById(t.dataset.jump);
+      m?.scrollIntoView({ block: "center", behavior: reduced() ? "auto" : "smooth" });
+      m?.classList.remove("lit"); void m?.offsetWidth; m?.classList.add("lit");
+    }
+    else if (t.dataset.href) location.hash = t.dataset.href;
+    else if (t.matches(".jump")) { const s = $(".transcript"); s.scrollTo({ top: s.scrollHeight, behavior: reduced() ? "auto" : "smooth" }); t.remove(); }
+    else if (t.matches(".older")) {
+      const h = D.open;
+      t.disabled = true;
+      try {
+        const earlier = await historyOf(h.key, h.messages[0].id);
+        const s = $(".transcript");
+        const fromEnd = s.scrollHeight - s.scrollTop;
+        h.messages = [...earlier.messages, ...h.messages];
+        h.has_more = earlier.has_more;
+        render();
+        const s2 = $(".transcript");
+        s2.scrollTop = s2.scrollHeight - fromEnd;
+      } catch { t.disabled = false; t.textContent = "Couldn't load earlier messages. Try again"; }
     }
   });
-  $(".search input").addEventListener("input", (e) => {
-    state.query = e.target.value.trim();
-    render();
-  });
+  const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  $(".search input").addEventListener("input", (e) => { state.query = e.target.value.trim(); renderList(); });
   document.addEventListener("keydown", (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $(".search input").focus(); return; }
+    const typing = e.target.matches("input");
+    if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing)) {
+      e.preventDefault(); $(".search input").focus(); return;
+    }
     if (e.key === "Escape") {
-      if (document.body.classList.contains("menu-open")) { document.body.classList.remove("menu-open"); $(".menu-btn").focus(); }
-      else if (state.info) { state.info = false; render(); }
-      else if (narrow() && route().id) $(".back-btn").click();
+      if (!$("#account-menu").hidden) { menu(false); $(".account-btn").focus(); }
+      else if (typing && state.query) { e.target.value = ""; state.query = ""; renderList(); }
+      else if (route().info) location.hash = href(route().key);
+      else if (narrow() && route().key) location.hash = "#/";
       return;
     }
     // arrow keys move through the list, as in Mail
-    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && e.target.closest(".rows")) {
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && e.target.closest(".rows, .search")) {
       e.preventDefault();
-      const rows = [...document.querySelectorAll(".rows .row")];
+      const rows = [...document.querySelectorAll(".rows a.row")];
       const i = rows.indexOf(e.target.closest(".row"));
       rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))]?.focus();
     }
   });
 
-  // --- live: the server says when something was sent or read; the page refetches ---------------------
+  // --- live: the server says when something was sent or read --------------------------------------------------------
+  loading();
+  from = route().key;
   refresh().then(() => {
     if (!D.me) return;
-    const live = (on) => {
-      $(".live").classList.toggle("off", !on);
-      $(".live-text").textContent = on ? "Live" : "Reconnecting";
-    };
     const stream = new EventSource("/api/stream");
-    stream.onopen = () => live(true);
-    stream.onerror = () => live(false);
+    stream.onopen = () => { live(true); if (state.failed || $(".live").dataset.lost) refresh(); delete $(".live").dataset.lost; };
+    stream.onerror = () => { live(false); $(".live").dataset.lost = "1"; };
     stream.addEventListener("changed", async () => {
       const before = D.convs[0]?.last.sent_at;
       await refresh();
       const newest = D.convs[0];
-      if (newest && newest.last.sent_at !== before) $("#announce").textContent = `New message from ${newest.last.from} in ${label(newest.key)}`;
+      if (newest && newest.last.sent_at !== before) $("#announce").textContent = `New message from ${label(newest.last.from)}${isGroup(newest.key) ? ` in ${label(newest.key)}` : ""}`;
     });
   });
 })();
