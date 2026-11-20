@@ -19,12 +19,16 @@ os.environ.setdefault("GITHUB_CLIENT_ID", "test")
 os.environ.setdefault("GITHUB_CLIENT_SECRET", "test")
 os.environ.setdefault("GITHUB_ORG", "test-org")
 
+import mailbox
 import server
 from server import (
     SubscribeParams,
     UnsubscribeParams,
     contacts,
+    create_group,
     inbox,
+    invite,
+    leave,
     mark_read,
     org_member,
     send,
@@ -34,6 +38,7 @@ from server import (
 )
 
 pytestmark = pytest.mark.anyio
+SCHEMA = (Path(__file__).parent.parent / "schema.sql").read_text()
 
 
 @pytest.fixture
@@ -44,8 +49,11 @@ def anyio_backend():
 @pytest.fixture
 async def db():
     conn = await asyncpg.connect(os.environ["DATABASE_URL"])
-    await conn.execute((Path(__file__).parent.parent / "schema.sql").read_text())
-    await conn.execute("truncate messages, agents, users, event_subscriptions")
+    await conn.execute(SCHEMA)
+    await conn.execute(
+        "truncate deliveries, messages, group_members, groups, agents, users, "
+        "event_subscriptions"
+    )
     yield conn
     await conn.close()
 
@@ -64,7 +72,7 @@ async def test_teammate_found_by_alias_receives_and_clears_message(db):
     assert (await whoami(token=turing, db=db))["setup_needed"]
     await set_aliases(["Prof", "Alan"], token=turing, db=db)
 
-    people = await contacts(token=church, db=db)
+    people = (await contacts(token=church, db=db))["people"]
     assert {"Prof", "Alan"} <= set(
         next(p for p in people if p["login"] == "turing")["aliases"]
     )
@@ -292,3 +300,185 @@ async def test_pre_sep_clients_find_message_events_in_server_discover():
     async with Client(server.mcp) as client:
         discovered = await client.session.send_discover("2026-07-28")
     assert "events" in discovered["capabilities"]
+
+
+async def join(db, group: str, *addresses: str) -> None:
+    """Add other people's addresses to a group, as an approved invitation will."""
+    for address in addresses:
+        login, _, agent = address.partition("/")
+        await db.execute(
+            "insert into users (login) values ($1) on conflict do nothing", login
+        )
+        await db.execute(
+            "insert into group_members (group_id, login, agent) values ($1, $2, $3)",
+            group[1:],
+            login,
+            agent or None,
+        )
+
+
+async def texts(token, db, agent=None) -> list[str]:
+    return [
+        m["text"] for m in (await inbox(agent=agent, token=token, db=db))["messages"]
+    ]
+
+
+async def own_agents_group(token, db, creator: str, *others: str) -> str:
+    """A group of one person's agents, as when they make their models discuss."""
+    for agent in (creator, *others):
+        await inbox(agent=agent, token=token, db=db)
+    group = (await create_group("models", from_agent=creator, token=token, db=db))[
+        "group"
+    ]
+    for agent in others:
+        await invite(group, f"bukely/{agent}", from_agent=creator, token=token, db=db)
+    return group
+
+
+async def test_group_message_reaches_every_member_but_the_writing_address(db):
+    bukely = signed_in("bukely")
+    group = await own_agents_group(bukely, db, "grok", "gpt", "claude")
+
+    await send(
+        group, "which cache is faster?", from_agent="claude", token=bukely, db=db
+    )
+    assert await texts(bukely, db, "claude") == []
+    for agent in ("grok", "gpt"):
+        [message] = (await inbox(agent=agent, token=bukely, db=db))["messages"]
+        assert (message["from"], message["to"]) == ("bukely/claude", group)
+
+
+async def test_an_agent_marks_read_only_its_own_copy(db):
+    bukely = signed_in("bukely")
+    group = await own_agents_group(bukely, db, "claude", "grok", "gpt")
+    sent = await send(group, "benchmark done", from_agent="claude", token=bukely, db=db)
+
+    await mark_read([sent["id"]], agent="grok", token=bukely, db=db)
+    assert await texts(bukely, db, "grok") == []
+    assert await texts(bukely, db, "gpt") == ["benchmark done"]
+
+
+async def test_late_joiner_sees_only_later_group_messages(db):
+    turing = signed_in("turing")
+    group = (await create_group("compilers", token=turing, db=db))["group"]
+    await join(db, group, "church")
+    await send(group, "before", token=turing, db=db)
+    await join(db, group, "kleene")
+    await send(group, "after", token=turing, db=db)
+    assert await texts(signed_in("kleene"), db) == ["after"]
+
+
+async def test_a_members_agent_posts_to_the_group_but_outsiders_cannot(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    group = (await create_group("compilers", token=turing, db=db))["group"]
+    await join(db, group, "church")
+    await inbox(agent="bot", token=church, db=db)
+
+    await send(group, "build is green", from_agent="bot", token=church, db=db)
+    assert await texts(turing, db) == ["build is green"]
+    with pytest.raises(ToolError, match="not in"):
+        await send(group, "hi", token=signed_in("kleene"), db=db)
+
+
+async def test_mark_read_clears_only_the_readers_copies(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    group = (await create_group("compilers", token=turing, db=db))["group"]
+    await join(db, group, "church", "church/bot", "kleene")
+    sent = await send(group, "standup at ten", token=turing, db=db)
+
+    await mark_read([sent["id"]], token=church, db=db)
+    assert await texts(church, db) == await texts(church, db, "bot") == []
+    assert await texts(signed_in("kleene"), db) == ["standup at ten"]
+
+
+async def test_only_your_own_addresses_join_until_the_next_version(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    group = (await create_group("compilers", token=turing, db=db))["group"]
+    with pytest.raises(ToolError, match="next version"):
+        await invite(group, "church", token=turing, db=db)
+    with pytest.raises(ToolError, match="not in"):
+        await invite(group, "church", token=church, db=db)
+
+
+async def test_owner_address_hands_over_on_leaving_and_the_last_one_out_deletes(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    await inbox(agent="bot", token=turing, db=db)
+    await inbox(agent="bot", token=church, db=db)
+    group = (await create_group("compilers", from_agent="bot", token=turing, db=db))[
+        "group"
+    ]
+    [created] = (await contacts(token=turing, db=db))["groups"]
+    assert (created["owner"], created["members"]) == ("turing/bot", ["turing/bot"])
+    await join(db, group, "church/bot")
+    await join(db, group, "kleene")
+    with pytest.raises(ToolError, match="owner"):
+        await leave(group, "kleene", from_agent="bot", token=church, db=db)
+
+    await leave(group, from_agent="bot", token=turing, db=db)
+    [joined] = (await contacts(token=church, db=db))["groups"]
+    assert (joined["owner"], joined["members"]) == (
+        "church/bot",
+        ["church/bot", "kleene"],
+    )
+    await leave(group, "kleene", from_agent="bot", token=church, db=db)
+    # church, writing as no agent, removes its own agent's address
+    await leave(group, "church/bot", token=church, db=db)
+    assert await db.fetchval("select count(*) from groups") == 0
+
+
+async def test_migration_numbers_old_messages_deliveries_with_their_ids(db):
+    await db.execute("insert into users (login) values ('turing'), ('church')")
+    # as written by a version without deliveries
+    old = await db.fetch(
+        "insert into messages (sender, recipient, recipient_agent, body, read_at) "
+        "values ('church', 'turing', null, 'unread', null), "
+        "('church', 'turing', 'bot', 'read', now()) returning id"
+    )
+    await db.execute(SCHEMA)
+    await db.execute(SCHEMA)
+
+    rows = await db.fetch(
+        "select id, message_id, read_at is not null from deliveries order by id"
+    )
+    assert [tuple(row) for row in rows] == [
+        (old[0]["id"], old[0]["id"], False),
+        (old[1]["id"], old[1]["id"], True),
+    ]
+    await send("turing", "new", token=signed_in("church"), db=db)
+    assert await texts(signed_in("turing"), db) == ["unread", "new"]
+
+
+async def test_events_come_from_deliveries(db, webhook):
+    turing, church = signed_in("turing"), signed_in("church")
+    await whoami(token=turing, db=db)
+    group = (await create_group("compilers", token=church, db=db))["group"]
+    await join(db, group, "turing")
+    async with Client(server.mcp):
+        await subscribe_turing()
+        sent = await send(group, "who is on call?", token=church, db=db)
+        assert await delivered(webhook, 1) == [str(sent["id"])]
+    [event] = [d for d in webhook if "eventId" in d]
+    assert event["data"]["to"] == group
+    assert event["cursor"] == str(
+        await db.fetchval("select id from deliveries where message_id = $1", sent["id"])
+    )
+
+
+async def test_expiry_deletes_old_messages_and_keeps_replies_to_them(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    await whoami(token=turing, db=db)
+    question = await send("turing", "old question", token=church, db=db)
+    answer = await send(
+        "church", "old answer", reply_to=question["id"], token=turing, db=db
+    )
+    await send("turing", "thanks", reply_to=answer["id"], token=church, db=db)
+    await db.execute(
+        "update messages set created_at = now() - interval '31 days' "
+        "where id = any($1)",
+        [question["id"], answer["id"]],
+    )
+
+    await mailbox.expire(db)
+    [thanks] = (await inbox(token=turing, db=db))["messages"]
+    assert (thanks["text"], thanks["reply_to"]) == ("thanks", None)
+    assert await db.fetchval("select count(*) from deliveries") == 1
