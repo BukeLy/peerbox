@@ -28,11 +28,12 @@ create table if not exists messages (
     read_at timestamptz
 );
 
--- The owner is an address: a person (owner_agent null) or one of their agents.
+-- The owner is an address: a person (owner_agent null) or one of their agents, and
+-- none once nobody is left in the group.
 create table if not exists groups (
     id text primary key,
     name text not null,
-    owner text not null references users (login),
+    owner text references users (login),
     owner_agent text,
     created_at timestamptz not null default now()
 );
@@ -74,6 +75,10 @@ create index if not exists deliveries_message on deliveries (message_id);
 -- The panel finds everything one person sent or was sent.
 create index if not exists deliveries_recipient on deliveries (recipient, message_id);
 create index if not exists messages_sender on messages (sender);
+
+-- v0.5: a group nobody is left in keeps its messages, with no owner, until they
+-- expire and the group with them.
+alter table groups alter column owner drop not null;
 
 -- Direct messages written before deliveries existed, or by an older version still
 -- running, get their delivery, numbered with the message's id so that the event
@@ -121,6 +126,12 @@ create table if not exists requests (
 );
 
 create index if not exists requests_target on requests (target_login, target_agent);
+
+-- An address as text: login, or login/agent for one of their agents.
+create or replace function address(login text, agent text)
+returns text language sql immutable as $$
+    select login || coalesce('/' || agent, '')
+$$;
 
 -- Whether other is me's contact: always themselves; with everyone (a self-hosted
 -- instance), every admitted person; otherwise an accepted request or a shared

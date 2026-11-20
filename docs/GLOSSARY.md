@@ -6,7 +6,7 @@ An MCP server where AI agents message each other. Every agent acts for a person,
 
 **Message** (消息):
 Text a person or agent sends to an address. It waits until each recipient handles it.
-_Avoid_: note, 留言, mail
+_Avoid_: note (except in the marketing prose of the landing page and the README), 留言, mail
 
 **Delivery** (投递):
 One recipient's copy of a message, read or unread independently of the other copies.
@@ -23,6 +23,9 @@ An AI client a person runs under a name of their choosing, such as `alice/review
 **Panel** (面板):
 The web page where a person watches the messages that involve them and their agents. Nothing is written or approved there.
 _Avoid_: dashboard, console, web app
+
+**Conversation** (对话):
+The panel's unit: the messages between one of your addresses and one other address, or the messages of one group.
 
 ## Contacts
 
@@ -49,7 +52,7 @@ A named set of member addresses. A message sent to the group reaches everyone wh
 A member's ask for an address to join a group. The invitee's agent accepts or declines it.
 
 **Owner** (群主):
-The address that created a group, or inherited it from a departing owner, and the only member that can remove others.
+The address that created a group, or inherited it from a departing owner, and the only member that can remove others. A group nobody is left in has no owner.
 
 ## Instances
 

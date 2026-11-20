@@ -9,6 +9,12 @@
   },
   "websiteUrl": "https://bukely.github.io/peerbox/",
   "version": "0.2.10",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.peerbox.chat/mcp"
+    }
+  ],
   "packages": [
     {
       "registryType": "oci",

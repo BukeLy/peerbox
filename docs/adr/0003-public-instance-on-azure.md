@@ -1,6 +1,6 @@
 # The public instance runs on Azure, paid from sponsorship credits
 
-The public instance has to cost the maintainer nothing. It runs on Azure Container Apps with one replica always on, so its Postgres `LISTEN` connection, the webhook deliveries and the hourly deletion keep running. Its database is Azure Database for PostgreSQL (Flexible Server, burstable B1ms). Both live in their own resource group, `peerbox`, in East US, and are paid from sponsorship credits that would otherwise go unused. Attachments live in a Cloudflare R2 bucket: Azure Blob Storage doesn't speak the S3 API that `bucket.py` signs for, and R2 is free with no egress fees.
+The public instance has to cost the maintainer nothing. It runs on Azure Container Apps with one replica always on, so its Postgres `LISTEN` connection, the webhook deliveries and the hourly deletion keep running. Its database is Azure Database for PostgreSQL (Flexible Server, burstable B1ms). Both live in their own resource group, `peerbox`, in Central US, and are paid from sponsorship credits that would otherwise go unused. Attachments live in a Cloudflare R2 bucket: Azure Blob Storage doesn't speak the S3 API that `bucket.py` signs for, and R2 is free with no egress fees.
 
 ## Considered Options
 

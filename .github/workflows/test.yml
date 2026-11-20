@@ -33,6 +33,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
+      - run: uvx ruff@0.17.6 check .
+      - run: uvx ruff@0.17.6 format --check .
       - run: uv run --locked pytest
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres

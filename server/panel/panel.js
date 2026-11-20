@@ -39,7 +39,8 @@
     walk(marked.lexer(text));
     return out.join("").replace(/\s+/g, " ").trim();
   };
-  const D = { me: null, name: null, people: {}, agents: {}, groups: {}, convs: null, waiting: {}, open: null };
+  // what the page knows: who you are, your contacts and groups, the list and the open conversation
+  const data = { me: null, name: null, people: {}, agents: {}, groups: {}, convs: null, waiting: {}, open: null };
   const state = { inbox: null, query: "", arrived: new Set(), failed: null, updated: null };
   // attachment URLs already shown, kept while they're valid: a fresh presigned URL downloads the image again
   const urls = new Map();
@@ -54,13 +55,14 @@
   };
 
   // --- addresses ---------------------------------------------------------------------------------
-  const isGroup = (a) => a.startsWith("#");
+  // what an address is: a group "#id", an agent "login/agent", or a person
+  const kind = (a) => (a.startsWith("#") ? "group" : a.includes("/") ? "agent" : "person");
   const owner = (a) => a.split("/")[0];
   const agentOf = (a) => a.split("/")[1];
-  const mine = (a) => !isGroup(a) && owner(a) === D.me;
+  const mine = (a) => kind(a) !== "group" && owner(a) === data.me;
   // you as "You", your agents by name, a group by its name, anyone else by their address
-  const label = (a) => (isGroup(a) ? D.groups[a]?.name ?? a : a === D.me ? "You" : mine(a) ? agentOf(a) : a);
-  const addr = (a) => (!isGroup(a) && !mine(a) && a.includes("/")
+  const label = (a) => (kind(a) === "group" ? data.groups[a]?.name ?? a : a === data.me ? "You" : mine(a) ? agentOf(a) : a);
+  const addr = (a) => (kind(a) === "agent" && !mine(a)
     ? `<span class="addr"><span class="owner">${esc(owner(a))}/</span>${esc(agentOf(a))}</span>`
     : `<span class="addr">${esc(label(a))}</span>`);
   // what an address is, drawn: a person, an agent, or a group
@@ -69,7 +71,6 @@
     agent: '<rect x="2.5" y="4.5" width="11" height="9" rx="3"/><path d="M6 8.3v1.4M10 8.3v1.4M8 4.5V2.3"/>',
     group: '<path d="M6.3 2.5 5 13.5M11 2.5 9.7 13.5M2.8 6h10.7M2.5 10h10.7"/>',
   };
-  const kind = (a) => (isGroup(a) ? "group" : a.includes("/") ? "agent" : "person");
   const glyph = (a) => `<svg class="kind" viewBox="0 0 16 16" aria-hidden="true">${GLYPH[kind(a)]}</svg>`;
   const disc = (a) => `<span class="disc" aria-hidden="true">${glyph(a)}</span>`;
 
@@ -88,7 +89,7 @@
     return m < 24 * 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 1440)} d`;
   };
   const ago = (d) => (now - d < 60000 ? "just now" : `${since(d)} ago`);
-  const checked = (a) => { const seen = D.agents[a]?.last_seen; return seen ? `Checked ${ago(new Date(seen))}` : "Not checked yet"; };
+  const checked = (a) => { const seen = data.agents[a]?.last_seen; return seen ? `Checked ${ago(new Date(seen))}` : "Not checked yet"; };
   const size = (n) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
   // --- route and data --------------------------------------------------------------------------------
@@ -101,10 +102,10 @@
   };
   const href = (key, info) => `#/${info ? "i" : "c"}/${encodeURIComponent(key)}`;
   // the conversation on screen: the one in the address, or on a wide screen the newest
-  const openKey = () => route().key || (!narrow() && D.convs?.[0]?.key) || null;
+  const openKey = () => route().key || (!narrow() && data.convs?.[0]?.key) || null;
   const historyOf = (key, before) => get(`/api/conversations/${encodeURIComponent(key)}${before ? `?before=${before}` : ""}`);
   const visible = () => {
-    let convs = D.convs;
+    let convs = data.convs;
     if (state.inbox) convs = convs.filter((c) => c.sides.includes(state.inbox));
     if (state.query) {
       const q = state.query.toLowerCase();
@@ -115,29 +116,29 @@
 
   const load = async () => {
     const [me, list] = await Promise.all([get("/api/me"), get("/api/conversations")]);
-    D.me = me.login;
-    D.people = Object.fromEntries(me.people.map((p) => [p.login, p]));
-    D.agents = Object.fromEntries(me.people.flatMap((p) => p.agents.map((a) => [`${p.login}/${a.name}`, a])));
-    D.groups = Object.fromEntries(me.groups.map((g) => [g.address, g]));
-    D.name = D.people[D.me]?.name;
-    const seen = D.convs && new Map(D.convs.map((c) => [c.key, c.last.sent_at]));
+    data.me = me.login;
+    data.people = Object.fromEntries(me.people.map((p) => [p.login, p]));
+    data.agents = Object.fromEntries(me.people.flatMap((p) => p.agents.map((a) => [`${p.login}/${a.name}`, a])));
+    data.groups = Object.fromEntries(me.groups.map((g) => [g.address, g]));
+    data.name = data.people[data.me]?.name;
+    const seen = data.convs && new Map(data.convs.map((c) => [c.key, c.last.sent_at]));
     if (seen) for (const c of list.conversations) if (seen.get(c.key) !== c.last.sent_at) state.arrived.add(c.key);
-    D.convs = list.conversations;
-    D.waiting = list.waiting;
+    data.convs = list.conversations;
+    data.waiting = list.waiting;
     const key = openKey();
-    const old = D.open?.key === key ? new Set(D.open.messages.map((m) => m.id)) : null;
+    const old = data.open?.key === key ? new Set(data.open.messages.map((m) => m.id)) : null;
     try {
-      D.open = key ? { key, ...(await historyOf(key)) } : null;
+      data.open = key ? { key, ...(await historyOf(key)) } : null;
       state.failed = null;
     } catch (e) {
       if (e.message === "signed out") throw e;
-      D.open = null;
+      data.open = null;
       state.failed = { key, at: now };
     }
-    if (old) for (const m of D.open?.messages ?? []) if (!old.has(m.id)) state.arrived.add(m.id);
+    if (old) for (const m of data.open?.messages ?? []) if (!old.has(m.id)) state.arrived.add(m.id);
     now = new Date();
     state.updated = now;
-    for (const f of D.open?.messages.flatMap((m) => m.attachments) ?? []) {
+    for (const f of data.open?.messages.flatMap((m) => m.attachments) ?? []) {
       const kept = urls.get(f.id);
       if (kept && now - kept.at < URL_MINUTES * 60000) f.url = kept.url;
       else urls.set(f.id, { url: f.url, at: now });
@@ -146,37 +147,37 @@
 
   // --- the title row: the finding, and your inboxes as the list's filter ---------------------------------
   const renderHead = () => {
-    const waits = Object.values(D.waiting).reduce((n, c) => n + c, 0);
+    const waits = Object.values(data.waiting).reduce((n, c) => n + c, 0);
     // the count leads to its cause: a link to the conversation that holds the oldest waiting message
-    const oldest = D.convs.filter((c) => c.waiting_since).sort((a, b) => new Date(a.waiting_since) - new Date(b.waiting_since))[0];
+    const oldest = data.convs.filter((c) => c.waiting_since).sort((a, b) => new Date(a.waiting_since) - new Date(b.waiting_since))[0];
     const where = oldest && `<a href="${href(oldest.key)}">${esc(label(oldest.key))}</a>`;
     $(".finding").innerHTML = waits && oldest
-      ? `<b>${waits === 1 ? "1 message waits" : `${waits} messages wait`}</b> in your inboxes. ${waits === 1 ? "It" : "The oldest"} has waited ${esc(since(new Date(oldest.waiting_since)))}, in ${isGroup(oldest.key) ? where : `your conversation with ${where}`}.`
-      : D.convs.length ? "Nothing waits in your inboxes." : "No conversations in the last 30 days.";
-    const inboxes = [D.me, ...Object.keys(D.agents).filter(mine)];
+      ? `<b>${waits === 1 ? "1 message waits" : `${waits} messages wait`}</b> in your inboxes. ${waits === 1 ? "It" : "The oldest"} has waited ${esc(since(new Date(oldest.waiting_since)))}, in ${kind(oldest.key) === "group" ? where : `your conversation with ${where}`}.`
+      : data.convs.length ? "Nothing waits in your inboxes." : "No conversations in the last 30 days.";
+    const inboxes = [data.me, ...Object.keys(data.agents).filter(mine)];
     $(".inboxes").innerHTML = inboxes.map((a) => {
-      const n = D.waiting[a] ?? 0;
+      const n = data.waiting[a] ?? 0;
       return `<button class="inbox" type="button" data-inbox="${esc(a)}" aria-pressed="${state.inbox === a}">
           <span class="label addr">${esc(label(a))}</span>
           <span class="fig">${n ? `<b>${n}</b>waiting` : "Nothing waiting"}</span>
-          <span class="sub">${esc(a === D.me ? `Sent to ${D.me}` : checked(a))}</span>
+          <span class="sub">${esc(a === data.me ? `Sent to ${data.me}` : checked(a))}</span>
         </button>`;
     }).join("");
   };
 
   // --- the list ------------------------------------------------------------------------------------------
   const preview = (c) => {
-    const speaker = c.last.from !== c.key && (isGroup(c.key) || mine(c.last.from)) ? `${label(c.last.from)}: ` : "";
+    const speaker = c.last.from !== c.key && (kind(c.key) === "group" || mine(c.last.from)) ? `${label(c.last.from)}: ` : "";
     return speaker + plain(c.last.text);
   };
   const renderList = () => {
-    const key = D.open?.key ?? state.failed?.key;
+    const key = data.open?.key ?? state.failed?.key;
     const convs = visible();
     const why = state.query ? `No conversation's name or latest message mentions “${esc(state.query)}”. <button class="clear-search" type="button">Clear search</button>`
-      : state.inbox ? `Nothing in the last 30 days involves ${esc(state.inbox === D.me ? "you directly" : label(state.inbox))}. <button type="button" data-inbox="${esc(state.inbox)}">Show all</button>`
+      : state.inbox ? `Nothing in the last 30 days involves ${esc(state.inbox === data.me ? "you directly" : label(state.inbox))}. <button type="button" data-inbox="${esc(state.inbox)}">Show all</button>`
       : "When one of your agents writes to someone, or someone writes to you or your agents, the conversation shows here.";
     // the pressed inbox can be out of view (a phone scrolls it away), so the list says it is filtered
-    const scope = state.inbox && convs.length ? `<p class="scope">Showing conversations that involve ${esc(state.inbox === D.me ? "you directly" : label(state.inbox))}. <button type="button" data-inbox="${esc(state.inbox)}">Show all</button></p>` : "";
+    const scope = state.inbox && convs.length ? `<p class="scope">Showing conversations that involve ${esc(state.inbox === data.me ? "you directly" : label(state.inbox))}. <button type="button" data-inbox="${esc(state.inbox)}">Show all</button></p>` : "";
     $(".rows").innerHTML = scope + (convs.length ? convs.map((c) => `
       <a class="row${c.waiting ? " waiting" : ""}${state.arrived.has(c.key) ? " arrived" : ""}" href="${href(c.key)}" data-key="${esc(c.key)}"${c.key === key ? ' aria-current="page"' : ""}>
         <span class="name">${glyph(c.key)}${addr(c.key)}</span>
@@ -189,14 +190,14 @@
   // --- the conversation ------------------------------------------------------------------------------------
   const tick = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>`;
   const chev = `<svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>`;
-  const whose = (a) => (a === D.me ? "your" : `${esc(label(a))}'s`);
+  const whose = (a) => (a === data.me ? "your" : `${esc(label(a))}'s`);
   const deliveryLine = (m) => {
     const ds = m.deliveries;
     if (!ds.length) return "";
     if (ds.length === 1) {
       const [d] = ds;
       return d.read_at
-        ? `<p class="state">${tick}Handled by ${esc(d.to === D.me ? "you" : label(d.to))} at ${esc(hm(new Date(d.read_at)))}</p>`
+        ? `<p class="state">${tick}Handled by ${esc(d.to === data.me ? "you" : label(d.to))} at ${esc(hm(new Date(d.read_at)))}</p>`
         : `<p class="state"><span class="slot" aria-hidden="true"></span><span class="waits">Waiting in ${whose(d.to)} inbox for ${esc(since(new Date(m.sent_at)))}</span></p>`;
     }
     const open = ds.filter((d) => !d.read_at);
@@ -217,11 +218,11 @@
       if (dayName(d) !== day) { day = dayName(d); prev = null; parts.push(`<p class="day">${esc(day)}</p>`); }
       const cont = prev && prev.from === m.from && prev.to === m.to && d - new Date(prev.sent_at) < 10 * 60000;
       const parent = m.reply_to && h.messages.find((x) => x.id === m.reply_to);
-      const to = !isGroup(h.key) && !mine(m.from) ? m.to : null;
+      const to = kind(h.key) !== "group" && !mine(m.from) ? m.to : null;
       parts.push(`
         <article class="msg${mine(m.from) ? " mine" : ""}${cont ? " cont" : ""}${state.arrived.has(m.id) ? " arrived" : ""}" id="m${m.id}" aria-label="${esc(label(m.from))}, ${esc(hm(d))}">
-          <p class="meta"><span class="who">${addr(m.from)}</span>${to ? `<span class="to">to ${esc(to === D.me ? "you" : label(to))}</span>` : ""}<time datetime="${m.sent_at}">${esc(hm(d))}</time></p>
-          <div class="note glass">
+          <p class="meta"><span class="who">${addr(m.from)}</span>${to ? `<span class="to">to ${esc(to === data.me ? "you" : label(to))}</span>` : ""}<time datetime="${m.sent_at}">${esc(hm(d))}</time></p>
+          <div class="message glass">
             ${parent ? `<a class="quote" href="#m${parent.id}" data-jump="m${parent.id}">${esc(plain(parent.text))}</a>` : ""}
             <div class="body">${md(m.text)}</div>
             ${files(m)}
@@ -233,19 +234,19 @@
     return parts.join("");
   };
   const subtitle = (k) => {
-    if (isGroup(k)) { const g = D.groups[k]; return g ? `${g.members.length} members · owner ${g.owner}` : "You are no longer in this group"; }
-    if (!k.includes("/")) return k === D.me ? "You" : D.people[k]?.name ?? "Person";
-    const a = D.agents[k];
+    if (kind(k) === "group") { const g = data.groups[k]; return g ? `${g.members.length} members · owner ${g.owner}` : "You are no longer in this group"; }
+    if (kind(k) === "person") return k === data.me ? "You" : data.people[k]?.name ?? "Person";
+    const a = data.agents[k];
     return [mine(k) ? "Your agent" : `${owner(k)}'s agent`, a?.description, a && checked(k).toLowerCase()].filter(Boolean).join(" · ");
   };
   const renderConvo = () => {
     const pane = $("#convo");
-    const h = D.open;
+    const h = data.open;
     if (!h) {
       delete pane.dataset.key;
       pane.innerHTML = state.failed
         ? `<div class="blank"><p>Couldn't load this conversation.</p><button class="retry" type="button">Try again</button></div>`
-        : `<div class="blank"><img src="panel/icon.png" alt="">${D.convs.length ? "<p>Choose a conversation.</p>" : ""}</div>`;
+        : `<div class="blank"><img src="panel/icon.png" alt="">${data.convs.length ? "<p>Choose a conversation.</p>" : ""}</div>`;
       return;
     }
     const r = route();
@@ -279,36 +280,36 @@
   // --- the inspector -----------------------------------------------------------------------------------------
   const renderInfo = () => {
     const info = $("#info");
-    const h = D.open;
+    const h = data.open;
     const show = Boolean(h && route().info);
     info.hidden = !show;
     $(".sheet").classList.toggle("with-info", show);
     if (!show) return;
     const k = h.key;
-    const c = D.convs.find((x) => x.key === k);
+    const c = data.convs.find((x) => x.key === k);
     const head = (title, sub) => `
       <div class="info-head">
         <a class="icon-btn back" href="${href(k)}" aria-label="Back to the conversation"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
         ${disc(k)}<div><${hn()} class="title" id="info-title" tabindex="-1">${title}</${hn()}><p>${esc(sub)}</p></div>
         <a class="icon-btn info-close" href="${href(k)}" aria-label="Close details"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></a>
       </div>`;
-    const who = (a) => `<p class="member">${glyph(a)}<span>${addr(a)}<span class="sub">${esc(a.includes("/") ? checked(a) : D.people[a]?.name ?? "Person")}</span></span>${isGroup(k) && a === D.groups[k]?.owner ? '<span class="tag">Owner</span>' : ""}</p>`;
+    const who = (a) => `<p class="member">${glyph(a)}<span>${addr(a)}<span class="sub">${esc(kind(a) === "agent" ? checked(a) : data.people[a]?.name ?? "Person")}</span></span>${kind(k) === "group" && a === data.groups[k]?.owner ? '<span class="tag">Owner</span>' : ""}</p>`;
     const counts = `<h3>Last 30 days</h3>
       <p class="kv"><span>Messages</span><span>${h.messages.length}${h.has_more ? "+" : ""}</span></p>
       <p class="kv"><span>Waiting in your inboxes</span><span>${c?.waiting ?? 0}</span></p>`;
-    if (isGroup(k)) {
-      const g = D.groups[k];
+    if (kind(k) === "group") {
+      const g = data.groups[k];
       info.innerHTML = g
         ? `${head(esc(g.name), k)}
           <p class="kv"><span>Owner</span><span class="addr">${esc(g.owner)}</span></p>
           <h3>${g.members.length} members</h3>${g.members.map(who).join("")}${counts}`
         : `${head(esc(k), "Group")}<p class="kv"><span>Membership</span><span>You left this group</span></p>${counts}`;
     } else {
-      const a = D.agents[k];
-      const person = D.people[owner(k)];
-      info.innerHTML = `${head(addr(k), k.includes("/") ? (mine(k) ? "Your agent" : "Agent") : "Person")}
+      const a = data.agents[k];
+      const person = data.people[owner(k)];
+      info.innerHTML = `${head(addr(k), kind(k) === "agent" ? (mine(k) ? "Your agent" : "Agent") : "Person")}
         ${a?.description ? `<p class="kv"><span>Does</span><span>${esc(a.description)}</span></p>` : ""}
-        ${k.includes("/") ? `<p class="kv"><span>Acts for</span><span>${esc(person?.name ? `${person.name} (${owner(k)})` : owner(k))}</span></p>
+        ${kind(k) === "agent" ? `<p class="kv"><span>Acts for</span><span>${esc(person?.name ? `${person.name} (${owner(k)})` : owner(k))}</span></p>
         <p class="kv"><span>Inbox</span><span>${esc(checked(k))}</span></p>` : `<p class="kv"><span>Name</span><span>${esc(person?.name ?? "—")}</span></p>`}
         <h3>Your side</h3>${(c?.sides ?? []).map(who).join("")}${counts}`;
     }
@@ -325,9 +326,9 @@
     $(".signin")?.remove();
     document.body.dataset.view = view();
     pageTitle(narrow() && route().key ? "p" : "h1");
-    $(".who").textContent = D.me;
-    $(".account-btn .initial").textContent = D.me[0];
-    $(".menu-who").innerHTML = `<b>${esc(D.name || D.me)}</b>Signed in as ${esc(D.me)}`;
+    $(".who").textContent = data.me;
+    $(".account-btn .initial").textContent = data.me[0];
+    $(".menu-who").innerHTML = `<b>${esc(data.name || data.me)}</b>Signed in as ${esc(data.me)}`;
     renderHead();
     renderList();
     renderInfo(); // first: it narrows the transcript, which then scrolls to its end
@@ -364,7 +365,7 @@
       try { await load(); render(); }
       catch (e) {
         if (e.message === "signed out") signedOut();
-        else if (!D.convs) failed();
+        else if (!data.convs) failed();
         else live(false, `Couldn't refresh · updated ${hm(state.updated)}`);
         console.error(e);
       }
@@ -384,7 +385,7 @@
   addEventListener("hashchange", async () => {
     const before = from;
     from = route().key;
-    if (D.open?.key !== openKey()) await refresh(); else render();
+    if (data.open?.key !== openKey()) await refresh(); else render();
     const v = view();
     if (v === "detail" && before !== from) $(".convo-head .title")?.focus({ preventScroll: true });
     else if (v === "info") $("#info-title")?.focus({ preventScroll: true });
@@ -392,8 +393,8 @@
   });
   let wasNarrow = narrow();
   addEventListener("resize", () => {
-    if (!D.me) return;
-    if (D.open?.key !== openKey()) refresh();
+    if (!data.me) return;
+    if (data.open?.key !== openKey()) refresh();
     else if (wasNarrow !== narrow()) render();
     wasNarrow = narrow();
   });
@@ -424,7 +425,7 @@
     else if (t.dataset.href) location.hash = t.dataset.href;
     else if (t.matches(".jump")) { const s = $(".transcript"); s.scrollTo({ top: s.scrollHeight, behavior: reduced() ? "auto" : "smooth" }); t.remove(); }
     else if (t.matches(".older")) {
-      const h = D.open;
+      const h = data.open;
       t.disabled = true;
       try {
         const earlier = await historyOf(h.key, h.messages[0].id);
@@ -465,15 +466,15 @@
   loading();
   from = route().key;
   refresh().then(() => {
-    if (!D.me) return;
+    if (!data.me) return;
     const stream = new EventSource("/api/stream");
     stream.onopen = () => { live(true); if (state.failed || $(".live").dataset.lost) refresh(); delete $(".live").dataset.lost; };
     stream.onerror = () => { live(false); $(".live").dataset.lost = "1"; };
     stream.addEventListener("changed", async () => {
-      const before = D.convs[0]?.last.sent_at;
+      const before = data.convs[0]?.last.sent_at;
       await refresh();
-      const newest = D.convs[0];
-      if (newest && newest.last.sent_at !== before) $("#announce").textContent = `New message from ${label(newest.last.from)}${isGroup(newest.key) ? ` in ${label(newest.key)}` : ""}`;
+      const newest = data.convs[0];
+      if (newest && newest.last.sent_at !== before) $("#announce").textContent = `New message from ${label(newest.last.from)}${kind(newest.key) === "group" ? ` in ${label(newest.key)}` : ""}`;
     });
   });
 })();

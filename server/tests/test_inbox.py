@@ -7,6 +7,7 @@ import time
 from base64 import b64encode
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import ANY
 from urllib.parse import parse_qs, quote, urlsplit
 
 import asyncpg
@@ -17,7 +18,6 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken, AuthContext
 from fastmcp.utilities.types import Image
 from standardwebhooks import Webhook
-from starlette.requests import Request
 from starlette.testclient import TestClient
 
 os.environ.setdefault("BASE_URL", "http://localhost:8000")
@@ -33,6 +33,7 @@ os.environ.setdefault("S3_REGION", "us-east-1")
 
 import bucket
 import mailbox
+import panel
 import server
 from server import (
     ChatGPTFile,
@@ -58,15 +59,34 @@ from server import (
 )
 
 pytestmark = pytest.mark.anyio
-# server imports the panel to register its routes before it builds the app, so the
-# panel is reached through server, never imported first.
-panel = server.panel
 SCHEMA = (Path(__file__).parent.parent / "schema.sql").read_text()
 
 
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+@pytest.fixture(scope="session")
+def bucket_exists():
+    """Wait for the test bucket, for the tests that store files in it: MinIO
+    reports healthy a few seconds before it makes the bucket, and until then every
+    write to it fails."""
+    deadline = time.monotonic() + 60
+    while True:
+        try:
+            asyncio.run(bucket.put("ready", b""))
+            break
+        except bucket.BucketError as error:
+            if time.monotonic() > deadline:
+                pytest.fail(
+                    f"The bucket {bucket.BUCKET!r} at {bucket.ENDPOINT} did not appear "
+                    f"within 60 s ({error}). Start MinIO as .github/CONTRIBUTING.md "
+                    "shows.",
+                    pytrace=False,
+                )
+            time.sleep(0.5)
+    asyncio.run(bucket.delete("ready"))
 
 
 @pytest.fixture
@@ -152,7 +172,7 @@ def github_token():
 
 
 async def test_active_org_member_is_admitted(github_token, monkeypatch):
-    monkeypatch.setattr(server, "GITHUB_ORG", os.environ["PEERBOX_TEST_ORG"])
+    monkeypatch.setattr(mailbox, "GITHUB_ORG", os.environ["PEERBOX_TEST_ORG"])
     token = AccessToken(token=github_token, client_id="test", scopes=[], claims={})
     assert await org_member(AuthContext(token=token, component=None))
 
@@ -170,8 +190,8 @@ async def test_members_and_plugin_repo_guests_are_admitted(
     monkeypatch, membership, plugin_repo, admitted
 ):
     routes = {
-        f"/user/memberships/orgs/{server.GITHUB_ORG}": membership,
-        f"/repos/{server.GITHUB_ORG}/peerbox-plugin": plugin_repo,
+        f"/user/memberships/orgs/{mailbox.GITHUB_ORG}": membership,
+        f"/repos/{mailbox.GITHUB_ORG}/peerbox-plugin": plugin_repo,
     }
 
     def github(request):
@@ -184,23 +204,24 @@ async def test_members_and_plugin_repo_guests_are_admitted(
         "AsyncClient",
         lambda **kwargs: client(transport=httpx2.MockTransport(github), **kwargs),
     )
-    token = AccessToken(
-        token=os.urandom(8).hex(), client_id="test", scopes=[], claims={}
-    )
-    assert await server.is_member(token) is admitted
+    assert await server.admits(os.urandom(8).hex(), None) is admitted
 
 
-async def test_sent_message_wakes_event_subscriptions(db):
+async def test_a_change_wakes_only_the_people_it_involves(db):
     turing, church = signed_in("turing"), signed_in("church")
     await whoami(token=turing, db=db)
-    woken = asyncio.Event()
-    server.waiters.add(woken)
-    try:
-        async with Client(server.mcp):
-            await send("turing", "hi", token=church, db=db)
-            await asyncio.wait_for(woken.wait(), timeout=5)
-    finally:
-        server.waiters.discard(woken)
+    await whoami(token=signed_in("kleene"), db=db)
+    watch = server.waiters.watch
+    async with Client(server.mcp):  # its listener hears the notifications
+        with watch("turing") as to, watch("church") as by, watch("kleene") as other:
+            sent = await send("turing", "hi", token=church, db=db)
+            for woken in (to, by):
+                await asyncio.wait_for(woken.wait(), timeout=5)
+                woken.clear()
+            await mark_read([sent["id"]], token=turing, db=db)  # the sender sees it
+            for woken in (to, by):
+                await asyncio.wait_for(woken.wait(), timeout=5)
+            assert not other.is_set()
 
 
 @pytest.fixture
@@ -225,10 +246,11 @@ def webhook(monkeypatch):
 HOOK = "https://client.example/hook"
 
 
-async def subscribe_turing() -> str:
+async def subscribe_turing(agent: str | None = None) -> str:
     secret = f"whsec_{b64encode(os.urandom(32)).decode()}"
     params = SubscribeParams(
         name="message.received",
+        arguments={"agent": agent},
         delivery={"mode": "webhook", "url": HOOK, "secret": secret},
     )
     return (await server.events.subscribe(None, params)).id
@@ -291,6 +313,26 @@ async def test_unsubscribe_stops_a_delivery_still_retrying(db, webhook, monkeypa
         assert pump.cancelled()
 
 
+async def test_an_ended_subscription_is_deleted_by_the_next_expiry(db, webhook):
+    await inbox(agent="bot", token=signed_in("turing"), db=db)
+    async with Client(server.mcp):
+        running = await subscribe_turing(agent="bot")
+        ended = await subscribe_turing()
+        await server.events.unsubscribe(
+            None, UnsubscribeParams(name="message.received", delivery={"url": HOOK})
+        )
+        # the hourly job runs after it ended, by the database's clock
+        await db.execute(
+            "update event_subscriptions set expires_at = now() - interval '1 minute' "
+            "where id = $1",
+            ended,
+        )
+        await mailbox.expire(db)
+    assert [
+        row["id"] for row in await db.fetch("select id from event_subscriptions")
+    ] == [running]
+
+
 async def test_reply_reaches_the_agent_that_wrote(db):
     turing, church = signed_in("turing"), signed_in("church")
     await whoami(token=church, db=db)
@@ -315,7 +357,7 @@ def test_reply_argument_keeps_the_ids_of_subscriptions_made_without_it():
 
 
 def test_subscribe_prompt_names_the_inbox_to_watch():
-    assert "notes to me," in server.subscribe_prompt()
+    assert "messages to me," in server.subscribe_prompt()
     assert "my agent 'review-bot'" in server.subscribe_prompt(agent="review-bot")
 
 
@@ -325,18 +367,22 @@ async def test_pre_sep_clients_find_message_events_in_server_discover():
     assert "events" in discovered["capabilities"]
 
 
-async def join(db, group: str, *addresses: str) -> None:
-    """Add other people's addresses to a group, as an approved invitation will."""
+async def join(db, group: str, inviter, *addresses: str, from_agent=None) -> None:
+    """Invite other people's addresses to a group, and accept for each of them."""
     for address in addresses:
-        login, _, agent = address.partition("/")
-        await db.execute(
-            "insert into users (login) values ($1) on conflict do nothing", login
-        )
-        await db.execute(
-            "insert into group_members (group_id, login, agent) values ($1, $2, $3)",
-            group[1:],
-            login,
-            agent or None,
+        member = mailbox.Address.parse(address)
+        token = signed_in(member.login)
+        await whoami(token=token, db=db)
+        if member.agent:
+            await inbox(agent=member.agent, token=token, db=db)
+        await invite(group, address, from_agent=from_agent, token=inviter, db=db)
+        [invitation] = [
+            r
+            for r in await requests_of(token, db, member.agent)
+            if (r["kind"], r["group"]) == ("invitation", group)
+        ]
+        await answer(
+            invitation["id"], True, from_agent=member.agent, token=token, db=db
         )
 
 
@@ -384,9 +430,9 @@ async def test_an_agent_marks_read_only_its_own_copy(db):
 async def test_late_joiner_sees_only_later_group_messages(db):
     turing = signed_in("turing")
     group = (await create_group("compilers", token=turing, db=db))["group"]
-    await join(db, group, "church")
+    await join(db, group, turing, "church")
     await send(group, "before", token=turing, db=db)
-    await join(db, group, "kleene")
+    await join(db, group, turing, "kleene")
     await send(group, "after", token=turing, db=db)
     assert await texts(signed_in("kleene"), db) == ["after"]
 
@@ -394,7 +440,7 @@ async def test_late_joiner_sees_only_later_group_messages(db):
 async def test_a_members_agent_posts_to_the_group_but_outsiders_cannot(db):
     turing, church = signed_in("turing"), signed_in("church")
     group = (await create_group("compilers", token=turing, db=db))["group"]
-    await join(db, group, "church")
+    await join(db, group, turing, "church")
     await inbox(agent="bot", token=church, db=db)
 
     await send(group, "build is green", from_agent="bot", token=church, db=db)
@@ -403,14 +449,17 @@ async def test_a_members_agent_posts_to_the_group_but_outsiders_cannot(db):
         await send(group, "hi", token=signed_in("kleene"), db=db)
 
 
-async def test_mark_read_clears_only_the_readers_copies(db):
+async def test_mark_read_clears_only_the_copy_of_the_address_that_read(db):
     turing, church = signed_in("turing"), signed_in("church")
     group = (await create_group("compilers", token=turing, db=db))["group"]
-    await join(db, group, "church", "church/bot", "kleene")
+    await join(db, group, turing, "church", "church/bot", "kleene")
     sent = await send(group, "standup at ten", token=turing, db=db)
 
     await mark_read([sent["id"]], token=church, db=db)
-    assert await texts(church, db) == await texts(church, db, "bot") == []
+    assert await texts(church, db) == []
+    assert await texts(church, db, "bot") == ["standup at ten"]
+    await mark_read([sent["id"]], agent="bot", token=church, db=db)
+    assert await texts(church, db, "bot") == []
     assert await texts(signed_in("kleene"), db) == ["standup at ten"]
 
 
@@ -421,7 +470,7 @@ async def test_only_members_invite(db):
         await invite(group, "church", token=church, db=db)
 
 
-async def test_owner_address_hands_over_on_leaving_and_the_last_one_out_deletes(db):
+async def test_owner_address_hands_over_on_leaving(db):
     turing, church = signed_in("turing"), signed_in("church")
     await inbox(agent="bot", token=turing, db=db)
     await inbox(agent="bot", token=church, db=db)
@@ -430,8 +479,7 @@ async def test_owner_address_hands_over_on_leaving_and_the_last_one_out_deletes(
     ]
     [created] = (await contacts(token=turing, db=db))["groups"]
     assert (created["owner"], created["members"]) == ("turing/bot", ["turing/bot"])
-    await join(db, group, "church/bot")
-    await join(db, group, "kleene")
+    await join(db, group, turing, "church/bot", "kleene", from_agent="bot")
     with pytest.raises(ToolError, match="owner"):
         await leave(group, "kleene", from_agent="bot", token=church, db=db)
 
@@ -444,6 +492,28 @@ async def test_owner_address_hands_over_on_leaving_and_the_last_one_out_deletes(
     await leave(group, "kleene", from_agent="bot", token=church, db=db)
     # church, writing as no agent, removes its own agent's address
     await leave(group, "church/bot", token=church, db=db)
+    assert await contacts(token=church, db=db) == {"people": ANY, "groups": []}
+    # nobody is left and nothing was said, so the next expiry deletes the group
+    await mailbox.expire(db)
+    assert await db.fetchval("select count(*) from groups") == 0
+
+
+async def test_an_emptied_group_keeps_its_messages_until_they_expire(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    group = (await create_group("compilers", token=turing, db=db))["group"]
+    await join(db, group, turing, "church")
+    await send(group, "plan", token=turing, db=db)
+    await leave(group, token=church, db=db)
+    await leave(group, token=turing, db=db)
+
+    await mailbox.expire(db)
+    with browser("church") as page:
+        [talk] = page.get("/api/conversations").json()["conversations"]
+        assert (talk["key"], talk["name"]) == (group, "compilers")
+        [kept] = page.get(f"/api/conversations/{quote(group)}").json()["messages"]
+        assert kept["text"] == "plan"
+    await db.execute("update messages set created_at = now() - interval '31 days'")
+    await mailbox.expire(db)
     assert await db.fetchval("select count(*) from groups") == 0
 
 
@@ -473,7 +543,7 @@ async def test_events_come_from_deliveries(db, webhook):
     turing, church = signed_in("turing"), signed_in("church")
     await whoami(token=turing, db=db)
     group = (await create_group("compilers", token=church, db=db))["group"]
-    await join(db, group, "turing")
+    await join(db, group, church, "turing")
     async with Client(server.mcp):
         await subscribe_turing()
         sent = await send(group, "who is on call?", token=church, db=db)
@@ -483,6 +553,16 @@ async def test_events_come_from_deliveries(db, webhook):
     assert event["cursor"] == str(
         await db.fetchval("select id from deliveries where message_id = $1", sent["id"])
     )
+
+
+async def test_a_reply_to_a_deleted_message_is_refused(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    await whoami(token=turing, db=db)
+    question = await send("turing", "old question", token=church, db=db)
+    await db.execute("update messages set created_at = now() - interval '31 days'")
+    await mailbox.expire(db)
+    with pytest.raises(ToolError, match="No message"):
+        await send("church", "late", reply_to=question["id"], token=turing, db=db)
 
 
 async def test_expiry_deletes_old_messages_and_keeps_replies_to_them(db):
@@ -508,8 +588,7 @@ async def test_expiry_deletes_old_messages_and_keeps_replies_to_them(db):
 @pytest.fixture
 def public(monkeypatch):
     """The public instance, where only contacts and fellow group members write."""
-    monkeypatch.setattr(mailbox, "SELF_HOSTED", False)
-    monkeypatch.setattr(server, "GITHUB_ORG", None)
+    monkeypatch.setattr(mailbox, "GITHUB_ORG", None)
 
 
 async def requests_of(token, db, agent=None) -> list[dict]:
@@ -553,6 +632,36 @@ async def test_a_declined_request_leaves_them_strangers(db, public):
         await answer(request["id"], True, token=turing, db=db)
     with pytest.raises(ToolError, match="not your contact"):
         await send("turing", "hi", token=church, db=db)
+
+
+async def test_a_contact_request_waits_in_every_inbox_until_one_answers(
+    db, webhook, public
+):
+    turing, church = signed_in("turing"), signed_in("church")
+    await inbox(agent="bot", token=turing, db=db)
+    async with Client(server.mcp):
+        await subscribe_turing(agent="bot")
+        await add_contact("turing", token=church, db=db)
+        await delivered(webhook, 1)
+    [event] = [d for d in webhook if "eventId" in d]
+    assert event["data"]["kind"] == "contact_request"
+    [request] = await requests_of(turing, db)
+    assert await requests_of(turing, db, "bot") == [request]
+
+    await answer(request["id"], True, from_agent="bot", token=turing, db=db)
+    assert await requests_of(turing, db) == await requests_of(turing, db, "bot") == []
+    with pytest.raises(ToolError, match="already answered"):
+        await answer(request["id"], False, token=turing, db=db)
+    await send("turing", "hi", token=church, db=db)
+
+
+async def test_unanswered_requests_expire(db, public):
+    turing = signed_in("turing")
+    await whoami(token=turing, db=db)
+    await add_contact("turing", token=signed_in("church"), db=db)
+    await db.execute("update requests set created_at = now() - interval '31 days'")
+    await mailbox.expire(db)
+    assert await requests_of(turing, db) == []
 
 
 async def test_asking_someone_who_asked_you_makes_contacts_at_once(db, public):
@@ -603,12 +712,11 @@ async def test_an_invited_contact_joins_on_accepting(db, public):
     assert joined["members"] == ["turing", "church/bot"]
 
 
-async def test_an_invitation_cannot_take_a_group_past_50_people(db, public):
+async def test_an_invitation_cannot_take_a_group_past_50_people(db):
     turing, church = signed_in("turing"), signed_in("church")
-    await mailbox.record_memberships(db, "turing", ["acme"])
-    await mailbox.record_memberships(db, "church", ["acme"])
+    await whoami(token=church, db=db)
     group = (await create_group("everyone", token=turing, db=db))["group"]
-    await join(db, group, *(f"person{i}" for i in range(49)))
+    await join(db, group, turing, *(f"person{i}" for i in range(49)))
     await invite(group, "church", token=turing, db=db)
     [invitation] = await requests_of(church, db)
     with pytest.raises(ToolError, match="50 people"):
@@ -621,7 +729,7 @@ async def test_deleting_an_account_deletes_its_data_and_hands_over_its_groups(
     turing, church = signed_in("turing"), signed_in("church")
     await whoami(token=church, db=db)
     group = (await create_group("compilers", token=turing, db=db))["group"]
-    await join(db, group, "church")
+    await join(db, group, turing, "church")
     await send(group, "bye", token=turing, db=db)
     await send("church", "to church", token=turing, db=db)
     await send("turing", "to turing", token=church, db=db)
@@ -656,38 +764,38 @@ async def test_deleting_an_account_deletes_its_data_and_hands_over_its_groups(
 async def test_anyone_is_admitted_publicly_with_their_installed_organisations(
     db, monkeypatch, public
 ):
-    routes = {
-        "/user/installations": {
-            "installations": [
-                {"account": {"login": "acme", "type": "Organization"}},
-                {"account": {"login": "widgets", "type": "Organization"}},
-                {"account": {"login": "turing", "type": "User"}},
-            ]
-        },
-        "/user/memberships/orgs/acme": {"state": "active"},
-        "/user/memberships/orgs/widgets": {"state": "pending"},
+    def org(login):
+        return {"account": {"login": login, "type": "Organization"}}
+
+    second = "https://api.github.com/user/installations?per_page=100&page=2"
+    pages = {
+        None: ([org("acme"), {"account": {"login": "turing", "type": "User"}}], second),
+        "2": ([org("widgets"), org("gadgets")], None),
     }
+    states = {"acme": "active", "widgets": "active", "gadgets": "pending"}
+
+    def github(request):
+        if request.url.path == "/user/installations":
+            installations, after = pages[request.url.params.get("page")]
+            links = {"Link": f'<{after}>; rel="next"'} if after else {}
+            return httpx2.Response(
+                200, json={"installations": installations}, headers=links
+            )
+        state = states[request.url.path.rsplit("/", 1)[-1]]
+        return httpx2.Response(200, json={"state": state})
+
     client = httpx2.AsyncClient
     monkeypatch.setattr(
         server.httpx2,
         "AsyncClient",
-        lambda **kwargs: client(
-            transport=httpx2.MockTransport(
-                lambda request: httpx2.Response(200, json=routes[request.url.path])
-            ),
-            **kwargs,
-        ),
-    )
-    token = AccessToken(
-        token=os.urandom(8).hex(),
-        client_id="test",
-        scopes=[],
-        claims={"login": "turing"},
+        lambda **kwargs: client(transport=httpx2.MockTransport(github), **kwargs),
     )
     async with Client(server.mcp):  # opens the database pool
-        assert await server.is_member(token)
-    orgs = await db.fetch("select org from memberships where login = 'turing'")
-    assert [row["org"] for row in orgs] == ["acme"]
+        assert await server.admits(os.urandom(8).hex(), "turing")
+    orgs = await db.fetch(
+        "select org from memberships where login = 'turing' order by org"
+    )
+    assert [row["org"] for row in orgs] == ["acme", "widgets"]
 
 
 @pytest.fixture
@@ -726,6 +834,7 @@ def web(monkeypatch):
 PNG = b"\x89PNG\r\n\x1a\n" + os.urandom(64)
 
 
+@pytest.mark.usefixtures("bucket_exists")
 async def test_a_file_from_chatgpt_reaches_the_recipient_as_an_image(db, web):
     served, site = web
     served["/files/f1"] = ("application/octet-stream", PNG)
@@ -756,6 +865,7 @@ async def test_a_file_from_chatgpt_reaches_the_recipient_as_an_image(db, web):
         await open_attachment(file["id"], token=signed_in("kleene"), db=db)
 
 
+@pytest.mark.usefixtures("bucket_exists")
 async def test_a_file_at_a_url_is_fetched_through_redirects_and_read_as_text(db, web):
     served, site = web
     served["/notes.txt"] = ("text/plain; charset=utf-8", b"step 1\n")
@@ -777,6 +887,7 @@ async def test_files_over_10_mb_are_refused(db, web):
         await attach(url=f"{site}/huge", token=church, db=db)
 
 
+@pytest.mark.usefixtures("bucket_exists")
 async def test_an_upload_is_checked_when_sent(db):
     turing, church = signed_in("turing"), signed_in("church")
     await whoami(token=turing, db=db)
@@ -806,9 +917,19 @@ async def test_only_public_https_urls_are_fetched(db):
 
 
 async def test_attachments_are_off_without_a_bucket(db, monkeypatch):
+    fetched = []
+
+    async def fetch(url):
+        fetched.append(url)
+
     monkeypatch.setattr(bucket, "ENABLED", False)
+    monkeypatch.setattr(server, "fetch_public", fetch)
+    church = signed_in("church")
     with pytest.raises(ToolError, match="off"):
-        await attach(token=signed_in("church"), db=db)
+        await attach(token=church, db=db)
+    with pytest.raises(ToolError, match="off"):
+        await attach(url="https://example.com/plan.pdf", token=church, db=db)
+    assert fetched == []
 
 
 async def test_requests_wake_a_subscribed_webhook(db, webhook, public):
@@ -834,7 +955,8 @@ async def test_requests_wake_a_subscribed_webhook(db, webhook, public):
 
 
 def session(login: str) -> str:
-    return panel.SESSION.encrypt(login.encode()).decode()
+    key = server.fernet("peerbox-panel-session")
+    return key.encrypt(login.encode()).decode()
 
 
 async def asgi(scope, receive, send):
@@ -854,7 +976,7 @@ async def test_signing_in_to_the_panel_sets_a_session(db, monkeypatch):
     replies = {
         "/login/oauth/access_token": {"access_token": os.urandom(8).hex()},
         "/user": {"login": "turing"},
-        f"/user/memberships/orgs/{server.GITHUB_ORG}": {"state": "active"},
+        f"/user/memberships/orgs/{mailbox.GITHUB_ORG}": {"state": "active"},
     }
     client = httpx2.AsyncClient
     monkeypatch.setattr(
@@ -889,6 +1011,7 @@ def test_the_panel_api_needs_a_session():
         assert page.get("/api/stream").status_code == 401
 
 
+@pytest.mark.usefixtures("bucket_exists")
 async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
     turing, church = signed_in("turing"), signed_in("church")
     await inbox(agent="bot", token=turing, db=db)
@@ -938,7 +1061,7 @@ async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
 async def test_a_group_conversation_shows_every_members_messages(db):
     turing, church = signed_in("turing"), signed_in("church")
     group = (await create_group("compilers", token=turing, db=db))["group"]
-    await join(db, group, "church", "kleene")
+    await join(db, group, turing, "church", "kleene")
     await send(group, "standup at ten", token=turing, db=db)
     agreed = await send(group, "agreed", token=church, db=db)
 
@@ -960,12 +1083,10 @@ async def test_a_group_conversation_shows_every_members_messages(db):
 async def test_the_stream_says_when_something_changed(db):
     turing, church = signed_in("turing"), signed_in("church")
     await whoami(token=turing, db=db)
-    cookie = f"peerbox_session={session('turing')}".encode()
-    request = Request({"type": "http", "headers": [(b"cookie", cookie)]})
     async with Client(server.mcp):  # its listener hears what is sent
-        response = await panel.stream(request)
-        changed = asyncio.create_task(anext(response.body_iterator))
+        stream = panel.changes(server.waiters, "turing")
+        changed = asyncio.create_task(anext(stream))
         await asyncio.sleep(0.1)  # the stream starts listening
         await send("turing", "hi", token=church, db=db)
         assert await asyncio.wait_for(changed, 5) == {"event": "changed", "data": ""}
-        await response.body_iterator.aclose()
+        await stream.aclose()

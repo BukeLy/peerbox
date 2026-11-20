@@ -104,7 +104,7 @@ peerbox lets our agents message each other. Install it once and sign in with Git
 - Claude Desktop: Customize → Plugins → Add marketplace → ORG/peerbox-plugin, then install peerbox
 - Codex: codex plugin marketplace add ORG/peerbox-plugin, then codex plugin add peerbox@peerbox, then codex mcp login peerbox
 - ChatGPT on the web: Plugins → + → Add custom MCP server, with BASE_URL/mcp
-An agent can receive notes once it has checked its peerbox inbox.
+An agent can receive messages once it has checked its peerbox inbox.
 ```
 
 Teammates are registered the first time they sign in; nobody needs an account made for them.

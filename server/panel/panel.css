@@ -9,8 +9,8 @@
   --paper: #f1f9fe;
   --sheet: #ffffff;
   --ground-2: #f5fafe;
-  --note: #ffffff;
-  --note-mine: #e5f2fd;
+  --message: #ffffff;
+  --message-mine: #e5f2fd;
   --active: #e1edf9;
   --hover: #f1f7fc;
   --border: #d8e5f2;
@@ -24,11 +24,11 @@
   --hi: #fff;
   --negative: #b4232a;
   --badge: #0253b5;
-  --button: linear-gradient(180deg, #1773d7, #0253b5); /* taste-skill-ignore: the landing page's button */
+  --button: linear-gradient(180deg, #1773d7, #0253b5); /* the landing page's button */
   --button-ink: #fff;
-  --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(206, 234, 253, 0.42)); /* taste-skill-ignore: the landing page's glass */
+  --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(206, 234, 253, 0.42)); /* the landing page's glass */
   --glass-edge: inset 0 1px 0 #fff, inset 0 -1px 0 rgba(255, 255, 255, 0.6), inset 0 12px 18px -14px #fff, inset 0 -14px 22px -14px rgba(41, 137, 232, 0.32);
-  --glass-rim: linear-gradient(160deg, #fff, rgba(255, 255, 255, 0.2) 32%, rgba(81, 170, 245, 0.28) 62%, rgba(255, 255, 255, 0.85)); /* taste-skill-ignore: the landing page's glass */
+  --glass-rim: linear-gradient(160deg, #fff, rgba(255, 255, 255, 0.2) 32%, rgba(81, 170, 245, 0.28) 62%, rgba(255, 255, 255, 0.85)); /* the landing page's glass */
   --lift: 0 1px 2px rgba(0, 46, 122, 0.1), 0 14px 34px -12px rgba(0, 46, 122, 0.34);
   /* your own messages: the same glass, tinted with the logo's azure */
   --mine-tint: rgba(81, 170, 245, 0.14);
@@ -53,8 +53,8 @@
     --paper: #00143d;
     --sheet: #031c4b;
     --ground-2: #011740;
-    --note: #062253;
-    --note-mine: #0b3168;
+    --message: #062253;
+    --message-mine: #0b3168;
     --active: #0f3166;
     --hover: #082555;
     --border: #15376b;
@@ -68,11 +68,11 @@
     --hi: rgba(181, 228, 252, 0.12);
     --negative: #ff9a9a;
     --badge: #81cbfb;
-    --button: linear-gradient(180deg, #b5e4fc, #81cbfb); /* taste-skill-ignore: the landing page's button */
+    --button: linear-gradient(180deg, #b5e4fc, #81cbfb); /* the landing page's button */
     --button-ink: #002e7a;
-    --glass: linear-gradient(180deg, rgba(129, 203, 251, 0.2), rgba(2, 83, 181, 0.16)); /* taste-skill-ignore: the landing page's glass */
+    --glass: linear-gradient(180deg, rgba(129, 203, 251, 0.2), rgba(2, 83, 181, 0.16)); /* the landing page's glass */
     --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(129, 203, 251, 0.2), inset 0 12px 18px -14px rgba(181, 228, 252, 0.35), inset 0 -14px 22px -14px rgba(41, 137, 232, 0.45);
-    --glass-rim: linear-gradient(160deg, rgba(255, 255, 255, 0.7), rgba(129, 203, 251, 0.1) 32%, rgba(81, 170, 245, 0.25) 62%, rgba(181, 228, 252, 0.55)); /* taste-skill-ignore: the landing page's glass */
+    --glass-rim: linear-gradient(160deg, rgba(255, 255, 255, 0.7), rgba(129, 203, 251, 0.1) 32%, rgba(81, 170, 245, 0.25) 62%, rgba(181, 228, 252, 0.55)); /* the landing page's glass */
     --lift: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
     --mine-tint: rgba(129, 203, 251, 0.12);
     --glow: 0.42;
@@ -97,7 +97,7 @@ body {
 }
 /* the paper's grain, and the caustics the glass bar frosts, fading out under the title */
 body::before, body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; }
-body::before { background: var(--caustics) 70% 0 / cover no-repeat; -webkit-mask: linear-gradient(#000, transparent 300px); mask: linear-gradient(#000, transparent 300px); opacity: 0.9; } /* taste-skill-ignore: a mask, not a fill */
+body::before { background: var(--caustics) 70% 0 / cover no-repeat; -webkit-mask: linear-gradient(#000, transparent 300px); mask: linear-gradient(#000, transparent 300px); opacity: 0.9; }
 body::after { background: var(--grain-ink); opacity: var(--grain); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
 a { color: inherit; }
 button, input { font: inherit; color: inherit; }
@@ -133,8 +133,8 @@ p { margin: 0; }
 .glass::before {
   content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; pointer-events: none;
   background: var(--glass-rim);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; /* taste-skill-ignore: a mask, not a fill */
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); /* taste-skill-ignore: a mask, not a fill */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
 }
 .toolbar { z-index: 10; margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; padding: 8px 8px 8px 14px; border-radius: 999px; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; font-variation-settings: "ROND" 80; text-decoration: none; }
@@ -220,7 +220,7 @@ p { margin: 0; }
 /* ---------- the open conversation ---------- */
 .convo { position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; background: var(--ground-2); }
 /* the light rises from the foot, where new messages arrive; the glass messages frost it as they scroll over */
-.convo::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--caustics) 50% 100% / cover no-repeat; -webkit-mask: linear-gradient(transparent 30%, #000 95%); mask: linear-gradient(transparent 30%, #000 95%); opacity: var(--glow); } /* taste-skill-ignore: a mask, not a fill */
+.convo::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--caustics) 50% 100% / cover no-repeat; -webkit-mask: linear-gradient(transparent 30%, #000 95%); mask: linear-gradient(transparent 30%, #000 95%); opacity: var(--glow); }
 .convo:focus { outline: none; }
 .convo-head { display: flex; align-items: center; gap: 12px; min-height: 72px; padding: 14px 16px 14px 24px; border-bottom: 1px solid var(--rule); }
 .convo-head .titles { flex: 1; }
@@ -239,7 +239,7 @@ p { margin: 0; }
 .older:hover { background: var(--hover); }
 .day { width: max-content; margin: 20px auto 4px; padding: 3px 10px; border-radius: 999px; background: var(--ground-2); color: var(--faint); font-size: 12px; font-weight: 500; }
 
-/* a message: who wrote it to whom, the note itself, and where each of its deliveries stands */
+/* a message: who wrote it to whom, the message itself, and where each of its deliveries stands */
 .msg { display: grid; grid-template-columns: minmax(0, 1fr); max-width: min(70ch + 34px, 88%); margin-top: 20px; }
 .msg.cont { margin-top: 6px; }
 .msg.mine { margin-left: auto; }
@@ -249,11 +249,11 @@ p { margin: 0; }
 .meta .to { color: var(--soft); white-space: nowrap; }
 .meta time { color: var(--soft); font-size: 12px; white-space: nowrap; }
 .msg.cont .meta { display: none; }
-/* the bubble is the toolbar's glass (class glass), as the landing page's notes are */
-.note { justify-self: start; max-width: 100%; padding: 11px 16px 12px; border-radius: 20px; }
-.msg.mine .note { justify-self: end; background: linear-gradient(var(--mine-tint), var(--mine-tint)), var(--glass); } /* taste-skill-ignore: a flat tint laid over the brand's glass */
-.msg.arrived .note { animation: arrive 0.5s var(--ease); }
-.msg.lit .note { animation: lit 1.6s var(--ease); }
+/* the bubble is the toolbar's glass (class glass), as the landing page's message bubbles are */
+.message { justify-self: start; max-width: 100%; padding: 11px 16px 12px; border-radius: 20px; }
+.msg.mine .message { justify-self: end; background: linear-gradient(var(--mine-tint), var(--mine-tint)), var(--glass); } /* a flat tint laid over the brand's glass */
+.msg.arrived .message { animation: arrive 0.5s var(--ease); }
+.msg.lit .message { animation: lit 1.6s var(--ease); }
 /* the message's markdown, at bubble scale: wide code and tables scroll inside the bubble instead of widening it */
 .body { min-width: 0; overflow-wrap: anywhere; }
 .body > * { margin: 0; }
@@ -294,7 +294,7 @@ p { margin: 0; }
 .file .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .file .size { color: var(--faint); font-size: 12px; white-space: nowrap; }
 
-/* deliveries: handled is quiet ink; waiting is the note still glowing in the slot, the screen's one colour */
+/* deliveries: handled is quiet ink; waiting is the message still glowing in the slot, the screen's one colour */
 .state, .deliveries summary { display: flex; align-items: center; gap: 6px; margin: 6px 4px 0; color: var(--soft); font-size: 12px; }
 .msg.mine .state, .msg.mine .deliveries { justify-self: end; }
 .state svg, .deliveries summary svg { flex: none; width: 14px; height: 14px; }
@@ -349,7 +349,7 @@ p { margin: 0; }
 .btn:active { translate: 0 1px; scale: 0.97; }
 
 /* ---------- which view shows ---------- */
-body[data-view="signed-out"]::before { -webkit-mask: radial-gradient(70% 60% at 60% 45%, #000 30%, transparent); mask: radial-gradient(70% 60% at 60% 45%, #000 30%, transparent); background-position: 70% 50%; } /* taste-skill-ignore: a mask, not a fill */
+body[data-view="signed-out"]::before { -webkit-mask: radial-gradient(70% 60% at 60% 45%, #000 30%, transparent); mask: radial-gradient(70% 60% at 60% 45%, #000 30%, transparent); background-position: 70% 50%; }
 body[data-view="signed-out"] .toolbar, body[data-view="signed-out"] .head, body[data-view="signed-out"] .sheet { display: none; }
 .inboxes:empty { display: none; }
 body[data-view="loading"] .tools, body[data-view="failed"] .tools { visibility: hidden; }
@@ -359,8 +359,8 @@ body[data-view="loading"] .tools, body[data-view="failed"] .tools { visibility: 
 @keyframes arrive-row { from { background: var(--active); } }
 @keyframes lit { from { box-shadow: var(--glass-edge), var(--lift), 0 0 0 3px var(--light); } }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  .glass, .note { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--note); }
-  .msg.mine .note { background: var(--note-mine); }
+  .glass, .message { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--message); }
+  .msg.mine .message { background: var(--message-mine); }
   .convo::before { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -1,5 +1,6 @@
 """Attachment files in an S3-compatible bucket (Cloudflare R2 by default), reached
-through URLs presigned here with AWS Signature Version 4, so no SDK is needed."""
+through URLs presigned here with AWS Signature Version 4, so no SDK is needed.
+Callers deal in keys, bytes and URLs; every failure is a BucketError."""
 
 import hmac
 import os
@@ -15,10 +16,60 @@ ACCESS_KEY_ID = os.environ.get("S3_ACCESS_KEY_ID")
 SECRET_ACCESS_KEY = os.environ.get("S3_SECRET_ACCESS_KEY", "")
 REGION = os.environ.get("S3_REGION", "auto")
 ENABLED = all([ENDPOINT, BUCKET, ACCESS_KEY_ID, SECRET_ACCESS_KEY])
+URL_SECONDS = 3600  # how long a presigned URL works
 
 
-def presign(method: str, key: str, expires: int = 3600) -> str:
-    """A URL that lets its holder make this one request for expires seconds."""
+class BucketError(Exception):
+    """The bucket refused a request or could not be reached."""
+
+
+def upload_url(key: str) -> str:
+    """A URL that stores a file under key with one PUT, for an hour."""
+    return _presign("PUT", key)
+
+
+def download_url(key: str) -> str:
+    """A URL that fetches the file under key, for an hour."""
+    return _presign("GET", key)
+
+
+async def put(key: str, data: bytes) -> None:
+    await _send("PUT", key, data)
+
+
+async def get(key: str) -> bytes:
+    return (await _send("GET", key)).content
+
+
+async def size(key: str) -> int | None:
+    """The size in bytes of the file under key, or None if there is none yet."""
+    response = await _send("HEAD", key, missing_ok=True)
+    if response.status_code == 404:
+        return None
+    return int(response.headers["content-length"])
+
+
+async def delete(key: str) -> None:
+    await _send("DELETE", key)
+
+
+async def _send(
+    method: str, key: str, content: bytes | None = None, missing_ok: bool = False
+) -> httpx2.Response:
+    try:
+        async with httpx2.AsyncClient(timeout=30) as client:
+            response = await client.request(
+                method, _presign(method, key), content=content
+            )
+    except httpx2.HTTPError as error:
+        raise BucketError(f"{method} {key} failed: {error}") from error
+    if not response.is_success and not (missing_ok and response.status_code == 404):
+        raise BucketError(f"{method} {key} failed: HTTP {response.status_code}")
+    return response
+
+
+def _presign(method: str, key: str) -> str:
+    """A URL that lets its holder make this one request for URL_SECONDS."""
     now = datetime.now(UTC)
     day = now.strftime("%Y%m%d")
     scope = f"{day}/{REGION}/s3/aws4_request"
@@ -28,7 +79,7 @@ def presign(method: str, key: str, expires: int = 3600) -> str:
             "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
             "X-Amz-Credential": f"{ACCESS_KEY_ID}/{scope}",
             "X-Amz-Date": now.strftime("%Y%m%dT%H%M%SZ"),
-            "X-Amz-Expires": expires,
+            "X-Amz-Expires": URL_SECONDS,
             "X-Amz-SignedHeaders": "host",
         },
         safe="-_.~",
@@ -56,8 +107,3 @@ def presign(method: str, key: str, expires: int = 3600) -> str:
         signing_key = hmac.digest(signing_key, part.encode(), "sha256")
     signature = hmac.new(signing_key, signed.encode(), sha256).hexdigest()
     return f"{ENDPOINT}{path}?{query}&X-Amz-Signature={signature}"
-
-
-async def request(method: str, key: str, content: bytes | None = None):
-    async with httpx2.AsyncClient(timeout=30) as client:
-        return await client.request(method, presign(method, key), content=content)
