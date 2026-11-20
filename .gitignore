@@ -3,3 +3,4 @@ server.log
 .github_secret
 __pycache__/
 .ruff_cache/
+.taste-skill/
