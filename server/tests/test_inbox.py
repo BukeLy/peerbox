@@ -1137,6 +1137,41 @@ async def test_signing_in_to_the_panel_sets_a_session(db, monkeypatch):
         assert page.get("/api/me").json()["login"] == "turing"
 
 
+def rpc(page: TestClient, method: str, params: dict | None = None, **headers):
+    """A JSON-RPC request to /mcp, from a client that hasn't signed in."""
+    return page.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}},
+        headers={"Accept": "application/json, text/event-stream", **headers},
+    )
+
+
+def result(response) -> dict:
+    data = [line for line in response.text.splitlines() if line.startswith("data:")]
+    return json.loads(data[0][5:] if data else response.text)["result"]
+
+
+def test_anyone_sees_what_peerbox_offers_and_signs_in_to_use_it():
+    hello = {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "clientInfo": {"name": "a directory", "version": "1"},
+    }
+    with browser() as page:
+        assert result(rpc(page, "initialize", hello))["serverInfo"]["name"] == "peerbox"
+        assert rpc(page, "ping").status_code == 200
+        tools = {tool["name"] for tool in result(rpc(page, "tools/list"))["tools"]}
+        assert {"whoami", "send", "inbox", "create_group", "attach"} <= tools
+        call = {"name": "whoami", "arguments": {}}
+        for refused in (
+            rpc(page, "tools/call", call),
+            rpc(page, "prompts/list"),
+            rpc(page, "tools/list", Authorization="Bearer not-a-token"),
+        ):
+            assert refused.status_code == 401
+            assert "resource_metadata=" in refused.headers["www-authenticate"]
+
+
 def test_the_panel_api_needs_a_session():
     with browser() as page:
         assert page.get("/").status_code == 200

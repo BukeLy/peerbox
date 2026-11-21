@@ -19,6 +19,7 @@ from cryptography.fernet import InvalidToken
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken, Depends
 from fastmcp.server.auth import AccessToken, AuthContext
+from fastmcp.server.auth.middleware import RequireAuthMiddleware
 from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.extensions import MethodBinding, ServerExtension
@@ -43,7 +44,7 @@ from mcp_types import PaginatedRequestParams, RequestParams, Result
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
-from pydantic_core import to_json
+from pydantic_core import from_json, to_json
 
 import instance
 import mailbox
@@ -113,6 +114,14 @@ async def admitted(ctx: AuthContext) -> bool:
     )
 
 
+class ToolsListedToAll(AuthMiddleware):
+    """AuthMiddleware, except that tools/list shows every tool to every caller:
+    calling one still takes a signed-in caller this instance admits."""
+
+    async def on_list_tools(self, context, call_next):
+        return await call_next(context)
+
+
 class OAuthStore(PostgreSQLStore):
     # shortcut: overrides the store's private _create_pool, since it takes no pool
     # size and opens 10 connections; recheck when py-key-value-aio changes.
@@ -144,7 +153,7 @@ mcp = FastMCP(
     lifespan=instance.database,
     middleware=[
         StructuredLoggingMiddleware(),
-        AuthMiddleware(auth=admitted),
+        ToolsListedToAll(auth=admitted),
         SlidingWindowRateLimitingMiddleware(
             max_requests=MAX_CALLS_PER_MINUTE,
             get_client_id=caller_login,
@@ -1120,14 +1129,70 @@ mcp.add_middleware(LegacyEventsCapability())
 
 panel.install(mcp)
 
+# What a client may ask without signing in, so a directory or an agent can see what
+# peerbox offers first. Every other request without a token is answered 401, as
+# before, and that is what starts a client's sign-in.
+OPEN = {
+    "initialize",
+    "notifications/initialized",
+    "server/discover",
+    "ping",
+    "tools/list",
+}
+OPEN_BODY_LIMIT = 64 * 1024
+
+
+def rpc_method(body: bytes) -> str | None:
+    try:
+        message = from_json(body)
+    except ValueError:
+        return None
+    return message.get("method") if isinstance(message, dict) else None
+
+
+class OpenListing:
+    """Wraps /mcp's RequireAuthMiddleware: a POST without an Authorization header
+    whose JSON-RPC method is in OPEN skips it; everything else goes through it."""
+
+    def __init__(self, guarded: RequireAuthMiddleware):
+        self.guarded = guarded
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] != "http"
+            or scope["method"] != "POST"
+            or any(name == b"authorization" for name, _ in scope["headers"])
+        ):
+            await self.guarded(scope, receive, send)
+            return
+        # read the body to see its method, then hand it on unchanged; past the limit
+        # it can't be an open request, so the rest streams through untouched
+        chunks, size, more = [], 0, True
+        while more and size <= OPEN_BODY_LIMIT:
+            message = await receive()
+            chunks.append(message.get("body", b""))
+            size += len(chunks[-1])
+            more = message.get("more_body", False)
+        body = b"".join(chunks)
+        pending = [{"type": "http.request", "body": body, "more_body": more}]
+
+        async def replay():
+            return pending.pop() if pending else await receive()
+
+        is_open = not more and rpc_method(body) in OPEN
+        await (self.guarded.app if is_open else self.guarded)(scope, replay, send)
+
+
+mcp_app = mcp.http_app(
+    stateless_http=True,
+    host_origin_protection=True,
+    allowed_hosts=[urlparse(BASE_URL).hostname],
+)
+for route in mcp_app.routes:
+    if isinstance(getattr(route, "app", None), RequireAuthMiddleware):
+        route.app = OpenListing(route.app)
+
 # Runs behind a TLS-terminating proxy (Azure Container Apps' ingress, or the reverse
 # proxy a self-hosted instance puts in front) that is the only way to reach the
 # container, so its forwarded headers are trusted.
-app = wrap_asgi_with_proxy_headers(
-    mcp.http_app(
-        stateless_http=True,
-        host_origin_protection=True,
-        allowed_hosts=[urlparse(BASE_URL).hostname],
-    ),
-    trusted_hosts="*",
-)
+app = wrap_asgi_with_proxy_headers(mcp_app, trusted_hosts="*")
