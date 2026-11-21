@@ -46,7 +46,8 @@
     return out.join("").replace(/\s+/g, " ").trim();
   };
   const data = { me: null, name: null, people: {}, agents: {}, groups: {}, convs: null, waiting: {}, open: null };
-  const state = { inbox: null, query: "", arrived: new Set(), failed: null, updated: null };
+  // opened: the ids of the messages whose delivery list is open, so a redraw draws it open again
+  const state = { inbox: null, query: "", arrived: new Set(), opened: new Set(), failed: null, updated: null };
   // attachment URLs already shown, kept until shortly before they expire: a fresh presigned URL downloads the image again
   const urls = new Map();
   const URL_MARGIN = 10 * 60000;
@@ -250,7 +251,7 @@
     const summary = open.length
       ? `<span class="slot" aria-hidden="true"></span><span class="waits">Waiting in ${open.length} of ${ds.length} inboxes</span>`
       : `${tick}Handled by all ${ds.length}`;
-    return `<details class="deliveries"><summary>${summary}${chev}</summary><ul>${ds.map((d) => `
+    return `<details class="deliveries"${state.opened.has(`m${m.id}`) ? " open" : ""}><summary>${summary}${chev}</summary><ul>${ds.map((d) => `
         <li class="${d.read_at ? "" : "waits"}"><span>${addr(d.to)}</span><span>${d.read_at ? `Handled ${esc(hm(new Date(d.read_at)))}` : `Waiting ${esc(since(new Date(m.sent_at)))}`}</span></li>`).join("")}</ul></details>`;
   };
   const files = (m) => (m.attachments.length ? `<div class="files">${m.attachments.map((f) => f.mime.startsWith("image/")
@@ -266,7 +267,7 @@
       const parent = m.reply_to && conversation.messages.find((x) => x.id === m.reply_to);
       const to = kind(conversation.key) !== "group" && !mine(m.from) ? m.to : null;
       parts.push(`
-        <article class="msg${mine(m.from) ? " mine" : ""}${cont ? " cont" : ""}${state.arrived.has(m.id) ? " arrived" : ""}" id="m${m.id}" aria-label="${esc(label(m.from))}, ${esc(hm(d))}">
+        <article class="msg${mine(m.from) ? " mine" : ""}${cont ? " cont" : ""}${state.arrived.has(m.id) ? " arrived" : ""}" id="m${m.id}" tabindex="-1" aria-label="${esc(label(m.from))}, ${esc(hm(d))}">
           <p class="meta"><span class="who">${addr(m.from)}</span>${to ? `<span class="to">to ${esc(to === data.me ? "you" : label(to))}</span>` : ""}<time datetime="${m.sent_at}">${esc(hm(d))}</time></p>
           <div class="message glass">
             ${parent ? `<a class="quote" href="#m${parent.id}" data-jump="m${parent.id}">${esc(plain(parent.text))}</a>` : ""}
@@ -297,10 +298,10 @@
     pane.dataset.key = conversation.key;
     pane.innerHTML = `
       <header class="convo-head">
-        <a class="icon-btn back" href="#/" aria-label="Back to conversations"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
+        <a class="icon-btn back" id="convo-back" href="#/" aria-label="Back to conversations"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
         ${disc(conversation.key)}
-        <div class="titles"><${titleTag()} class="title" tabindex="-1">${addr(conversation.key)}</${titleTag()}><p>${esc(about(conversation.key).subtitle(conversation.key))}</p></div>
-        <button class="icon-btn info-btn" type="button" data-href="${href(conversation.key, !r.info)}" aria-label="Details" aria-expanded="${r.info}" aria-controls="info">
+        <div class="titles"><${titleTag()} class="title" id="convo-title" tabindex="-1">${addr(conversation.key)}</${titleTag()}><p>${esc(about(conversation.key).subtitle(conversation.key))}</p></div>
+        <button class="icon-btn info-btn" id="convo-details" type="button" data-href="${href(conversation.key, !r.info)}" aria-label="Details" aria-expanded="${r.info}" aria-controls="info">
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.5h.01"/></svg></button>
       </header>
       <div class="transcript" role="log" aria-label="Messages">${renderTranscript(conversation)}</div>`;
@@ -332,9 +333,9 @@
     const c = data.convs.find((x) => x.key === k);
     info.innerHTML = `
       <div class="info-head">
-        <a class="icon-btn back" href="${href(k)}" aria-label="Back to the conversation"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
+        <a class="icon-btn back" id="info-back" href="${href(k)}" aria-label="Back to the conversation"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
         ${disc(k)}<div><${titleTag()} class="title" id="info-title" tabindex="-1">${addr(k)}</${titleTag()}><p>${esc(about(k).noun(k))}</p></div>
-        <a class="icon-btn info-close" href="${href(k)}" aria-label="Close details"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></a>
+        <a class="icon-btn info-close" id="info-close" href="${href(k)}" aria-label="Close details"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></a>
       </div>
       ${about(k).facts(k, c)}
       <h3>Last 30 days</h3>
@@ -349,18 +350,20 @@
     const old = $("#title");
     if (old.localName !== tag) old.outerHTML = `<${tag} id="title">Conversations</${tag}>`;
   };
-  // what finds the focused element again once a redraw replaces it: its id, data-inbox (in the head or the list)
-  // or data-key, or the message whose delivery list it opens
-  const focusKey = (el) => {
-    if (el.id) return `#${CSS.escape(el.id)}`;
-    if (el.dataset.inbox) return `${el.closest(".inboxes") ? ".inboxes" : ".rows"} [data-inbox="${CSS.escape(el.dataset.inbox)}"]`;
-    if (el.dataset.key) return `.row[data-key="${CSS.escape(el.dataset.key)}"]`;
-    if (el.matches(".deliveries summary")) return `#${el.closest(".msg").id} summary`;
-    return null;
+  // finds the focused element again once a redraw replaces it: by its id, data-inbox (in the head or the list)
+  // or data-key; or inside its message, as the summary or link at the same place
+  const refinder = (el) => {
+    const selector = el.id ? `#${CSS.escape(el.id)}`
+      : el.dataset.inbox ? `${el.closest(".inboxes") ? ".inboxes" : ".rows"} [data-inbox="${CSS.escape(el.dataset.inbox)}"]`
+      : el.dataset.key ? `.row[data-key="${CSS.escape(el.dataset.key)}"]` : null;
+    if (selector) return () => $(selector);
+    const msg = el.closest(".msg");
+    const i = msg ? [...msg.querySelectorAll("summary, a")].indexOf(el) : -1;
+    return i < 0 ? null : () => document.getElementById(msg.id)?.querySelectorAll("summary, a")[i];
   };
   const render = () => {
-    const focused = document.activeElement && focusKey(document.activeElement);
-    const opened = [...document.querySelectorAll(".deliveries[open]")].map((d) => d.closest(".msg").id);
+    const refind = document.activeElement && refinder(document.activeElement);
+    state.opened = new Set([...document.querySelectorAll(".deliveries[open]")].map((d) => d.closest(".msg").id));
     $(".signin")?.remove();
     document.body.dataset.view = view();
     pageTitle(narrow() && route().key ? "p" : "h1");
@@ -374,8 +377,7 @@
     const key = route().key;
     document.title = `${key ? label(key) : "Conversations"} · peerbox`;
     state.arrived.clear();
-    for (const id of opened) document.getElementById(id)?.querySelector(".deliveries")?.setAttribute("open", "");
-    if (focused) $(focused)?.focus({ preventScroll: true });
+    refind?.()?.focus({ preventScroll: true });
   };
   const loading = () => {
     const bar = (w) => `<span class="bar" style="width:${w}"></span>`;
@@ -427,7 +429,7 @@
     from = route().key;
     if (data.open?.key !== openKey()) await refresh(); else render();
     const v = view();
-    if (v === "detail" && before !== from) $(".convo-head .title")?.focus({ preventScroll: true });
+    if (v === "detail" && before !== from) $("#convo-title")?.focus({ preventScroll: true });
     else if (v === "info") $("#info-title")?.focus({ preventScroll: true });
     else if (v === "list" && before) $(`.row[data-key="${CSS.escape(before)}"]`)?.focus();
   });
@@ -477,7 +479,11 @@
         render();
         const s2 = $(".transcript");
         s2.scrollTop = s2.scrollHeight - fromEnd;
-        $("#older")?.focus({ preventScroll: true }); // disabling it while loading dropped the focus
+        // disabling the button while loading dropped the focus: back to it, or once the last page is in and it is
+        // gone, to the first message that page brought
+        const older = $("#older");
+        if (older) older.focus({ preventScroll: true });
+        else document.getElementById(`m${earlier.messages[0].id}`).focus();
       } catch { t.disabled = false; t.textContent = "Couldn't load earlier messages. Try again"; t.focus(); }
     }
   });

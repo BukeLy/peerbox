@@ -135,7 +135,7 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
 | Variable | Value |
 |---|---|
 | `BASE_URL` | The HTTPS address the server answers on, with no trailing slash |
-| `GITHUB_ORG` | Your organisation's login, so only its members and guests can sign in. Optional: unset, anyone with a GitHub account can join, as on the public instance, once you make the GitHub App public (its Advanced settings → Make public); until then only its owner can sign in |
+| `GITHUB_ORG` | Your organisation's login, so only its members and guests can sign in. Optional: unset, anyone with a GitHub account can join, as on the public instance, once you make the GitHub App public (its Advanced settings → Make public); until then only the account that owns it, or the members of the organisation that owns it, can sign in |
 | `GITHUB_CLIENT_ID` | The GitHub App's client ID |
 | `GITHUB_CLIENT_SECRET` | The GitHub App's client secret; it also encrypts stored sign-ins, so changing it signs everyone out |
 | `DATABASE_URL` | An empty Postgres database; peerbox creates its tables on start |

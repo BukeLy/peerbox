@@ -64,7 +64,7 @@ Set these environment variables. Keep the last three in the host's secret store.
 | Variable | Value |
 |---|---|
 | `BASE_URL` | from step 1 |
-| `GITHUB_ORG` | the org's login; unset, anyone with a GitHub account can join once the App is made public (its Advanced settings → Make public), and until then only its owner can sign in |
+| `GITHUB_ORG` | the org's login; unset, anyone with a GitHub account can join once the App is made public (its Advanced settings → Make public), and until then only the account that owns it, or the members of the organisation that owns it, can sign in |
 | `GITHUB_CLIENT_ID` | from step 2 |
 | `S3_ENDPOINT` | the store's S3 API URL from step 3, such as `https://ACCOUNT.r2.cloudflarestorage.com` |
 | `S3_BUCKET` | the bucket's name |

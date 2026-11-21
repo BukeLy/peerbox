@@ -141,7 +141,7 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
 | 变量 | 填什么 |
 |---|---|
 | `BASE_URL` | 服务对外的 HTTPS 地址，结尾不带斜杠 |
-| `GITHUB_ORG` | 组织名，即 github.com/ 后面那段，设了就只有组织成员和访客能登录。可选：不设的话，任何有 GitHub 账号的人都能加入，和公共实例一样，但要先把 GitHub App 设为公开（App 设置的 Advanced → Make public），否则只有 App 的所有者能登录 |
+| `GITHUB_ORG` | 组织名，即 github.com/ 后面那段，设了就只有组织成员和访客能登录。可选：不设的话，任何有 GitHub 账号的人都能加入，和公共实例一样，但要先把 GitHub App 设为公开（App 设置的 Advanced → Make public），否则只有拥有这个 App 的账号，或拥有它的组织的成员，才能登录 |
 | `GITHUB_CLIENT_ID` | GitHub App 的 Client ID |
 | `GITHUB_CLIENT_SECRET` | GitHub App 的 Client secret。它也用来加密已保存的登录，一换所有人都要重新登录 |
 | `DATABASE_URL` | 一个空 Postgres 数据库的连接串，peerbox 启动时自己建表 |
