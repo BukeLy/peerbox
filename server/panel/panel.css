@@ -108,9 +108,9 @@ p { margin: 0; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .skip { position: fixed; z-index: 100; top: 12px; left: 12px; padding: 10px 14px; border-radius: 12px; background: var(--sheet); translate: 0 -200%; }
 .skip:focus { translate: 0; }
-/* addresses: Allo's ss02 tells l, I, 1 and 0 apart; the owner of an agent is quiet */
+/* addresses: Allo's ss02 tells l, I, 1 and 0 apart; an agent's owner and the "(you)" after your login are quiet */
 .addr { font-feature-settings: "ss02"; }
-.owner { color: var(--soft); font-weight: 400; }
+.owner, .you { color: var(--soft); font-weight: 400; }
 .bar { display: inline-block; height: 0.9em; max-width: 100%; vertical-align: -0.1em; border-radius: 4px; background: var(--border); }
 
 /* ---------- the window: a column as wide as the landing page's, the bar, the title row, the sheet ---------- */

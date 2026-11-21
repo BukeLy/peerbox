@@ -80,7 +80,7 @@
       detail: (a) => data.people[a]?.name ?? "Person",
       noun: () => "Person",
       facts: (a, c) => `<p class="kv"><span>Name</span><span>${esc(data.people[a]?.name ?? "—")}</span></p>${members("Your side", c?.sides ?? [], a)}`,
-      subtitle: (a) => (a === data.me ? "You" : data.people[a]?.name ?? "Person"),
+      subtitle: (a) => (a === data.me ? "Messages to yourself" : data.people[a]?.name ?? "Person"),
       ...direct,
     },
     agent: {
@@ -118,6 +118,9 @@
   const about = (a) => KIND[kind(a)];
   const label = (a) => about(a).label(a);
   const addr = (a) => about(a).addr(a);
+  // a conversation is named by its other side; the one with yourself by your login, marked as you
+  const title = (k) => (k === data.me ? `${k} (you)` : label(k));
+  const titled = (k) => (k === data.me ? `<span class="addr">${esc(k)} <span class="you">(you)</span></span>` : addr(k));
   const glyph = (a) => `<svg class="kind" viewBox="0 0 16 16" aria-hidden="true">${about(a).glyph}</svg>`;
   const disc = (a) => `<span class="disc" aria-hidden="true">${glyph(a)}</span>`;
 
@@ -155,7 +158,7 @@
     let convs = data.convs;
     if (state.query) {
       const q = state.query.toLowerCase();
-      convs = convs.filter((c) => [c.key, label(c.key), c.last.from, c.last.text].some((s) => s.toLowerCase().includes(q)));
+      convs = convs.filter((c) => [c.key, title(c.key), c.last.from, c.last.text].some((s) => s.toLowerCase().includes(q)));
     }
     return convs;
   };
@@ -195,7 +198,7 @@
     const waits = data.convs.reduce((n, c) => n + c.waiting, 0);
     // the count leads to its cause: a link to the conversation that holds the oldest waiting message; nothing waiting, no sentence
     const oldest = data.convs.filter((c) => c.waiting_since).sort((a, b) => new Date(a.waiting_since) - new Date(b.waiting_since))[0];
-    const link = oldest && `<a href="${href(oldest.key)}">${esc(label(oldest.key))}</a>`;
+    const link = oldest && `<a href="${href(oldest.key)}">${esc(title(oldest.key))}</a>`;
     $(".finding").innerHTML = oldest
       ? `${waits === 1 ? "<b>1 message waiting</b>" : `<b>${waits} messages waiting</b>; the oldest`}, ${esc(since(new Date(oldest.waiting_since)))}, ${about(oldest.key).where(link)}`
       : "";
@@ -213,7 +216,7 @@
       : "When one of your agents writes to someone, or someone writes to you or your agents, the conversation shows here.";
     $(".rows").innerHTML = convs.length ? convs.map((c) => `
       <a class="row${c.waiting ? " waiting" : ""}${state.arrived.has(c.key) ? " arrived" : ""}" href="${href(c.key)}" data-key="${esc(c.key)}"${c.key === key ? ' aria-current="page"' : ""}>
-        <span class="name">${glyph(c.key)}${addr(c.key)}</span>
+        <span class="name">${glyph(c.key)}${titled(c.key)}</span>
         <time datetime="${c.last.sent_at}">${esc(stamp(new Date(c.last.sent_at)))}</time>
         <span class="preview">${esc(preview(c))}</span>
         ${c.waiting ? `<span class="count"><span class="sr">, waiting: </span>${c.waiting}</span>` : ""}
@@ -293,7 +296,7 @@
       <header class="convo-head">
         <a class="icon-btn back" id="convo-back" href="#/" aria-label="Back to conversations"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
         ${disc(conversation.key)}
-        <div class="titles"><${titleTag()} class="title" id="convo-title" tabindex="-1">${addr(conversation.key)}</${titleTag()}><p>${esc(about(conversation.key).subtitle(conversation.key))}</p></div>
+        <div class="titles"><${titleTag()} class="title" id="convo-title" tabindex="-1">${titled(conversation.key)}</${titleTag()}><p>${esc(about(conversation.key).subtitle(conversation.key))}</p></div>
         <button class="icon-btn info-btn" id="convo-details" type="button" data-href="${href(conversation.key, !r.info)}" aria-label="Details" aria-expanded="${r.info}" aria-controls="info">
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.5h.01"/></svg></button>
       </header>
@@ -327,7 +330,7 @@
     info.innerHTML = `
       <div class="info-head">
         <a class="icon-btn back" id="info-back" href="${href(k)}" aria-label="Back to the conversation"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
-        ${disc(k)}<div><${titleTag()} class="title" id="info-title" tabindex="-1">${addr(k)}</${titleTag()}><p>${esc(about(k).noun(k))}</p></div>
+        ${disc(k)}<div><${titleTag()} class="title" id="info-title" tabindex="-1">${titled(k)}</${titleTag()}><p>${esc(about(k).noun(k))}</p></div>
         <a class="icon-btn info-close" id="info-close" href="${href(k)}" aria-label="Close details"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></a>
       </div>
       ${about(k).facts(k, c)}
@@ -367,7 +370,7 @@
     renderInfo(); // first: it narrows the transcript, which then scrolls to its end
     renderConvo();
     const key = route().key;
-    document.title = `${key ? label(key) : "Conversations"} · peerbox`;
+    document.title = `${key ? title(key) : "Conversations"} · peerbox`;
     state.arrived.clear();
     refind?.()?.focus({ preventScroll: true });
   };
