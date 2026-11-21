@@ -21,7 +21,7 @@ from fastmcp.dependencies import CurrentAccessToken, Depends
 from fastmcp.server.auth import AccessToken, AuthContext
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
 from fastmcp.server.auth.providers.github import GitHubProvider
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.dependencies import get_access_token, get_http_request
 from fastmcp.server.extensions import MethodBinding, ServerExtension
 from fastmcp.server.middleware import AuthMiddleware, Middleware
 from fastmcp.server.middleware.logging import StructuredLoggingMiddleware
@@ -129,9 +129,23 @@ class OAuthStore(PostgreSQLStore):
         return await create_pool(DATABASE_URL, min_size=1, max_size=2)
 
 
-def caller_login(ctx) -> str:
-    token = get_access_token()
-    return token.claims.get("login", "anonymous") if token else "anonymous"
+def limit_key(ctx) -> str:
+    """Whose rate limit a request counts against: the signed-in login, or for a
+    signed-out caller its address, so one caller can't use up everyone's."""
+    if token := get_access_token():
+        return token.claims.get("login", "anonymous")
+    try:
+        request = get_http_request()
+    except RuntimeError:
+        return "anonymous"
+    # the proxy appends the address the request came from; earlier entries are the
+    # caller's to forge, and granian's wrapper takes the first as request.client
+    forwarded = ",".join(request.headers.getlist("x-forwarded-for"))
+    if forwarded:
+        host = forwarded.rsplit(",", 1)[-1].strip()
+    else:
+        host = request.client.host if request.client else None
+    return f"ip:{host}" if host else "anonymous"
 
 
 mcp = FastMCP(
@@ -156,7 +170,7 @@ mcp = FastMCP(
         ToolsListedToAll(auth=admitted),
         SlidingWindowRateLimitingMiddleware(
             max_requests=MAX_CALLS_PER_MINUTE,
-            get_client_id=caller_login,
+            get_client_id=limit_key,
         ),
     ],
     auth=GitHubProvider(
