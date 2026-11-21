@@ -152,22 +152,11 @@ p { margin: 0; }
 .signout { display: block; width: 100%; min-height: 40px; padding: 0 10px; border: 0; border-radius: 10px; background: none; text-align: left; font-size: 14px; }
 .signout:hover { background: var(--hover); }
 
-.head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 40px; margin: 32px 0 20px; }
+.head { margin: 32px 0 20px; }
 .titles { min-width: 0; }
 #title { font-size: 26px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; font-variation-settings: "ROND" 80; }
 .finding { margin-top: 6px; color: var(--soft); font-size: 15px; text-wrap: pretty; }
 .finding b { color: var(--accent); font-weight: 600; }
-.inboxes { display: flex; flex: none; max-width: 100%; overflow-x: auto; scrollbar-width: none; border: 1px solid var(--border); border-radius: 16px; background: var(--sheet); box-shadow: var(--relief); }
-.inbox { display: grid; gap: 2px; flex: none; min-width: 148px; padding: 10px 16px 11px; border: 0; background: none; text-align: left; transition: background-color 0.2s; }
-.inbox + .inbox { border-left: 1px solid var(--rule); }
-.inbox:hover { background: var(--hover); }
-.inbox[aria-pressed="true"] { background: var(--active); }
-.inbox:first-child { border-radius: 15px 0 0 15px; }
-.inbox:last-child { border-radius: 0 15px 15px 0; }
-.inbox .label { color: var(--soft); font-size: 13px; font-weight: 500; }
-.inbox .fig { display: flex; align-items: baseline; gap: 6px; min-height: 25px; color: var(--soft); font-size: 13px; line-height: 25px; }
-.inbox .fig b { color: var(--accent); font-size: 22px; font-weight: 600; line-height: 1.15; }
-.inbox .sub { color: var(--faint); font-size: 12px; white-space: nowrap; }
 
 .sheet {
   position: relative; min-height: 0; display: grid; grid-template-columns: 340px minmax(0, 1fr);
@@ -204,8 +193,7 @@ p { margin: 0; }
 .count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--badge); color: var(--button-ink); font-size: 12px; font-weight: 600; line-height: 1; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45); }
 .empty { margin: 8px 4px; padding: 16px; border: 1px dashed var(--control); border-radius: 14px; color: var(--soft); font-size: 14px; }
 /* a filtered list says so above its rows */
-.scope { margin: 2px 6px 8px; padding: 8px 10px; border-radius: 12px; background: var(--active); color: var(--soft); font-size: 13px; }
-.empty button, .scope button, .retry { padding: 0; border: 0; background: none; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.empty button, .retry { padding: 0; border: 0; background: none; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 
 .kind { flex: none; width: 14px; height: 14px; color: var(--faint); }
 .disc { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--paper); box-shadow: var(--deboss); }
@@ -301,8 +289,22 @@ p { margin: 0; }
 .deliveries li { display: flex; justify-content: space-between; gap: 16px; }
 .deliveries li span:last-child { color: var(--faint); white-space: nowrap; }
 .deliveries li.waits span:last-child { color: var(--accent); }
-.blank { display: grid; place-content: center; justify-items: center; gap: 12px; height: 100%; padding: 24px; color: var(--soft); text-align: center; }
-.blank img { width: 72px; height: 72px; }
+.blank { display: grid; place-content: center; justify-items: center; gap: 12px; grid-row: 1 / -1; height: 100%; padding: 24px; color: var(--soft); text-align: center; }
+/* the landing page's mailbox: it arrives, bobs once and leans toward the pointer (.tilt, set in panel.js); the lean
+   stays on .tilt, since inherited, every pointer move would restyle the image inside it */
+@property --rx { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@property --ry { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.object { position: relative; width: clamp(140px, 16vw, 220px); animation: arrive-box 1.5s var(--ease) 0.15s backwards; }
+.float { animation: bob 4.5s ease-in-out 1.6s; }
+.tilt { position: relative; transform: perspective(1100px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform 0.8s var(--ease); }
+.object img { display: block; width: 100%; height: auto; filter: drop-shadow(0 44px 40px rgba(0, 46, 122, 0.3)); }
+.slot-glow {
+  position: absolute; left: 24%; right: 24%; top: 0; height: 30%; border-radius: 40%; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.95), rgba(181, 228, 252, 0.45) 60%, transparent);
+  mix-blend-mode: screen; opacity: 0.35;
+}
+@keyframes arrive-box { from { transform: translateY(48px) scale(0.92); } }
+@keyframes bob { 50% { translate: 0 -12px; } }
 .jump { position: absolute; left: 50%; bottom: 20px; translate: -50% 0; min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--button); color: var(--button-ink); font-size: 13px; font-weight: 600; box-shadow: var(--lift); }
 
 /* ---------- the inspector: who is in the conversation ---------- */
@@ -343,10 +345,9 @@ p { margin: 0; }
 /* ---------- which view shows ---------- */
 body[data-view="signed-out"]::before { -webkit-mask: radial-gradient(70% 60% at 60% 45%, #000 30%, transparent); mask: radial-gradient(70% 60% at 60% 45%, #000 30%, transparent); background-position: 70% 50%; }
 body[data-view="signed-out"] .toolbar, body[data-view="signed-out"] .head, body[data-view="signed-out"] .sheet { display: none; }
-.inboxes:empty { display: none; }
 body[data-view="loading"] .tools, body[data-view="failed"] .tools { visibility: hidden; }
 
-/* ---------- motion is feedback only: a row or a message arriving ---------- */
+/* ---------- motion is feedback, a row or a message arriving, besides the empty pane's mailbox ---------- */
 @keyframes arrive { from { opacity: 0; translate: 0 8px; } }
 @keyframes arrive-row { from { background: var(--active); } }
 @keyframes lit { from { box-shadow: var(--glass-edge), var(--lift), 0 0 0 3px var(--light); } }
@@ -364,8 +365,6 @@ body[data-view="loading"] .tools, body[data-view="failed"] .tools { visibility: 
   .app { width: calc(100% - 48px); }
   .sheet, .sheet.with-info { grid-template-columns: 300px minmax(0, 1fr); }
   .info { position: absolute; z-index: 5; top: 8px; right: 8px; bottom: 8px; width: min(320px, 100% - 16px); border: 1px solid var(--border); border-radius: 16px; background: var(--sheet); box-shadow: var(--lift); }
-  .head { flex-direction: column; align-items: stretch; }
-  .inboxes { align-self: flex-start; }
   .transcript { padding: 8px 20px 24px; }
 }
 @media (max-width: 860px) {
@@ -380,14 +379,8 @@ body[data-view="loading"] .tools, body[data-view="failed"] .tools { visibility: 
   /* a thumb's target: 44 points, as the HIG asks of touch controls */
   .icon-btn { width: 44px; height: 44px; }
   .account-btn { padding: 0 6px 0 4px; }
-  .head { margin: 24px 0 16px; gap: 14px; }
+  .head { margin: 24px 0 16px; }
   #title { font-size: 24px; }
-  /* two inboxes a row on a phone, the odd one out across both, so no cell is cut at the edge */
-  .inboxes { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; align-self: stretch; overflow: hidden; background: var(--rule); }
-  .inbox { min-width: 0; background: var(--sheet); border-radius: 0 !important; }
-  .inbox + .inbox { border-left: 0; }
-  .inbox:last-child:nth-child(odd) { grid-column: 1 / -1; }
-  .inbox[aria-pressed="true"] { background: var(--active); }
   .sheet, .sheet.with-info { grid-template-columns: minmax(0, 1fr); }
   .list { border-right: 0; }
   .convo, .info { display: none; }

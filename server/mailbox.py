@@ -459,8 +459,7 @@ async def mark_read(db: Connection, reader: Address, ids: list[int]) -> int:
 
 async def conversations(db: Connection, login: str) -> dict:
     """login's conversations, newest first: each with its last message, the addresses
-    of login's side in it and what waits there; and what waits in each of login's
-    inboxes."""
+    of login's side in it and what waits there."""
     rows = await db.fetch(
         f"with mine as ({_MINE}), "
         "sides as (select x.key, address(d.recipient, d.recipient_agent) as side, "
@@ -476,11 +475,6 @@ async def conversations(db: Connection, login: str) -> dict:
         "as waiting_since "
         "from mine x left join groups g on group_address(g.id) = x.key "
         "order by x.key, x.id desc",
-        login,
-    )
-    inboxes = await db.fetch(
-        "select address(recipient, recipient_agent) as inbox, count(*) "
-        "from deliveries where recipient = $1 and read_at is null group by 1",
         login,
     )
     listed = [
@@ -502,7 +496,6 @@ async def conversations(db: Connection, login: str) -> dict:
         "conversations": sorted(
             listed, key=lambda c: c["last"]["sent_at"], reverse=True
         ),
-        "waiting": {row["inbox"]: row["count"] for row in inboxes},
     }
 
 

@@ -1172,7 +1172,6 @@ async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
             ["turing", "turing/bot"],
             1,
         )
-        assert listed["waiting"] == {"turing": 1}
         messages = page.get("/api/conversations/church").json()["messages"]
     shown = [
         (m["text"], [(d["to"], d["read_at"] is not None) for d in m["deliveries"]])

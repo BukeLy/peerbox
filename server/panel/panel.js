@@ -45,9 +45,9 @@
     walk(marked.lexer(text));
     return out.join("").replace(/\s+/g, " ").trim();
   };
-  const data = { me: null, name: null, people: {}, agents: {}, groups: {}, convs: null, waiting: {}, open: null };
+  const data = { me: null, name: null, people: {}, agents: {}, groups: {}, convs: null, open: null };
   // opened: the ids of the messages whose delivery list is open, so a redraw draws it open again
-  const state = { inbox: null, query: "", arrived: new Set(), opened: new Set(), failed: null, updated: null };
+  const state = { query: "", arrived: new Set(), opened: new Set(), failed: null, updated: null };
   // attachment URLs already shown, kept until shortly before they expire: a fresh presigned URL downloads the image again
   const urls = new Map();
   const URL_MARGIN = 10 * 60000;
@@ -68,10 +68,10 @@
   // label: you as "You", your agents by name, a group by its name, anyone else by their address.
   // addr: the label as an address; another person's agent keeps its owner, quiet. detail: the line under a member's address.
   // noun: the line under the details pane's title. facts: the details pane's lines about it.
-  // subtitle: the line under the conversation's title. where: how a sentence names the conversation, around a link to it.
+  // subtitle: the line under the conversation's title. where: how the finding names the conversation, around a link to it.
   // in: what an announcement of a new message adds after its sender.
   const named = (a) => `<span class="addr">${esc(label(a))}</span>`;
-  const direct = { where: (link) => `your conversation with ${link}`, in: () => "" };
+  const direct = { where: (link) => `with ${link}`, in: () => "" };
   const KIND = {
     person: {
       glyph: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3.2 13.5c.6-2.5 2.5-3.9 4.8-3.9s4.2 1.4 4.8 3.9"/>',
@@ -111,7 +111,7 @@
           : `<p class="kv"><span>Membership</span><span>You left this group</span></p>`;
       },
       subtitle: (a) => { const g = data.groups[a]; return g ? `${g.members.length} members · owner ${g.owner}` : "You are no longer in this group"; },
-      where: (link) => link,
+      where: (link) => `in ${link}`,
       in: (a) => ` in ${label(a)}`,
     },
   };
@@ -153,7 +153,6 @@
   const historyOf = (key, before) => get(`/api/conversations/${encodeURIComponent(key)}${before ? `?before=${before}` : ""}`);
   const visible = () => {
     let convs = data.convs;
-    if (state.inbox) convs = convs.filter((c) => c.sides.includes(state.inbox));
     if (state.query) {
       const q = state.query.toLowerCase();
       convs = convs.filter((c) => [c.key, label(c.key), c.last.from, c.last.text].some((s) => s.toLowerCase().includes(q)));
@@ -171,7 +170,6 @@
     const seen = data.convs && new Map(data.convs.map((c) => [c.key, c.last.sent_at]));
     if (seen) for (const c of list.conversations) if (seen.get(c.key) !== c.last.sent_at) state.arrived.add(c.key);
     data.convs = list.conversations;
-    data.waiting = list.waiting;
     const key = openKey();
     const old = data.open?.key === key ? new Set(data.open.messages.map((m) => m.id)) : null;
     try {
@@ -194,22 +192,13 @@
 
   // --- the title row ------------------------------------------------------------------------------------
   const renderHead = () => {
-    const waits = Object.values(data.waiting).reduce((n, c) => n + c, 0);
-    // the count leads to its cause: a link to the conversation that holds the oldest waiting message
+    const waits = data.convs.reduce((n, c) => n + c.waiting, 0);
+    // the count leads to its cause: a link to the conversation that holds the oldest waiting message; nothing waiting, no sentence
     const oldest = data.convs.filter((c) => c.waiting_since).sort((a, b) => new Date(a.waiting_since) - new Date(b.waiting_since))[0];
     const link = oldest && `<a href="${href(oldest.key)}">${esc(label(oldest.key))}</a>`;
-    $(".finding").innerHTML = waits && oldest
-      ? `<b>${waits === 1 ? "1 message waits" : `${waits} messages wait`}</b> in your inboxes. ${waits === 1 ? "It" : "The oldest"} has waited ${esc(since(new Date(oldest.waiting_since)))}, in ${about(oldest.key).where(link)}.`
-      : data.convs.length ? "Nothing waits in your inboxes." : "No conversations in the last 30 days.";
-    const inboxes = [data.me, ...Object.keys(data.agents).filter(mine)];
-    $(".inboxes").innerHTML = inboxes.map((a) => {
-      const n = data.waiting[a] ?? 0;
-      return `<button class="inbox" type="button" data-inbox="${esc(a)}" aria-pressed="${state.inbox === a}">
-          <span class="label addr">${esc(label(a))}</span>
-          <span class="fig">${n ? `<b>${n}</b>waiting` : "Nothing waiting"}</span>
-          <span class="sub">${esc(a === data.me ? `Sent to ${data.me}` : checked(a))}</span>
-        </button>`;
-    }).join("");
+    $(".finding").innerHTML = oldest
+      ? `${waits === 1 ? "<b>1 message waiting</b>" : `<b>${waits} messages waiting</b>; the oldest`}, ${esc(since(new Date(oldest.waiting_since)))}, ${about(oldest.key).where(link)}`
+      : "";
   };
 
   // --- the list ------------------------------------------------------------------------------------------
@@ -221,17 +210,14 @@
     const key = data.open?.key ?? state.failed?.key;
     const convs = visible();
     const why = state.query ? `No conversation's name or latest message mentions “${esc(state.query)}”. <button class="clear-search" type="button">Clear search</button>`
-      : state.inbox ? `Nothing in the last 30 days involves ${esc(state.inbox === data.me ? "you directly" : label(state.inbox))}. <button type="button" data-inbox="${esc(state.inbox)}">Show all</button>`
       : "When one of your agents writes to someone, or someone writes to you or your agents, the conversation shows here.";
-    // the pressed inbox can be out of view (a phone scrolls it away), so the list says it is filtered
-    const scope = state.inbox && convs.length ? `<p class="scope">Showing conversations that involve ${esc(state.inbox === data.me ? "you directly" : label(state.inbox))}. <button type="button" data-inbox="${esc(state.inbox)}">Show all</button></p>` : "";
-    $(".rows").innerHTML = scope + (convs.length ? convs.map((c) => `
+    $(".rows").innerHTML = convs.length ? convs.map((c) => `
       <a class="row${c.waiting ? " waiting" : ""}${state.arrived.has(c.key) ? " arrived" : ""}" href="${href(c.key)}" data-key="${esc(c.key)}"${c.key === key ? ' aria-current="page"' : ""}>
         <span class="name">${glyph(c.key)}${addr(c.key)}</span>
         <time datetime="${c.last.sent_at}">${esc(stamp(new Date(c.last.sent_at)))}</time>
         <span class="preview">${esc(preview(c))}</span>
         ${c.waiting ? `<span class="count"><span class="sr">, waiting: </span>${c.waiting}</span>` : ""}
-      </a>`).join("") : `<p class="empty">${why}</p>`);
+      </a>`).join("") : `<p class="empty">${why}</p>`;
   };
 
   // --- the conversation ------------------------------------------------------------------------------------
@@ -285,9 +271,16 @@
     const conversation = data.open;
     if (!conversation) {
       delete pane.dataset.key;
-      pane.innerHTML = state.failed
-        ? `<div class="blank"><p>Couldn't load this conversation.</p><button class="retry" type="button">Try again</button></div>`
-        : `<div class="blank"><img src="panel/icon.png" alt="">${data.convs.length ? "<p>Choose a conversation.</p>" : ""}</div>`;
+      if (state.failed) pane.innerHTML = `<div class="blank"><p>Couldn't load this conversation.</p><button class="retry" type="button">Try again</button></div>`;
+      else {
+        // drawn once, so a live refresh neither replays the mailbox's arrival nor resets its lean
+        if (!$(".blank .object", pane)) {
+          pane.innerHTML = `<div class="blank"><div class="object"><div class="float"><div class="tilt">
+              <img src="panel/peerbox.webp" alt="" width="1200" height="1200"><span class="slot-glow" aria-hidden="true"></span>
+            </div></div></div><p>Choose a conversation.</p></div>`;
+        }
+        $(".blank > p", pane).hidden = !data.convs.length;
+      }
       return;
     }
     const r = route();
@@ -350,11 +343,10 @@
     const old = $("#title");
     if (old.localName !== tag) old.outerHTML = `<${tag} id="title">Conversations</${tag}>`;
   };
-  // finds the focused element again once a redraw replaces it: by its id, data-inbox (in the head or the list)
-  // or data-key; or inside its message, as the summary or link at the same place
+  // finds the focused element again once a redraw replaces it: by its id or data-key; or inside its message,
+  // as the summary or link at the same place
   const refinder = (el) => {
     const selector = el.id ? `#${CSS.escape(el.id)}`
-      : el.dataset.inbox ? `${el.closest(".inboxes") ? ".inboxes" : ".rows"} [data-inbox="${CSS.escape(el.dataset.inbox)}"]`
       : el.dataset.key ? `.row[data-key="${CSS.escape(el.dataset.key)}"]` : null;
     if (selector) return () => $(selector);
     const msg = el.closest(".msg");
@@ -381,8 +373,6 @@
   };
   const loading = () => {
     const bar = (w) => `<span class="bar" style="width:${w}"></span>`;
-    $(".inboxes").innerHTML = ["4em", "6em"].map((w) => `
-      <div class="inbox" aria-hidden="true"><span class="label">${bar(w)}</span><span class="fig"><b>${bar("1.4em")}</b></span><span class="sub">${bar("7em")}</span></div>`).join("");
     $(".rows").innerHTML = Array.from({ length: 6 }, (_, i) => `
       <div class="row" aria-hidden="true"><span class="name">${bar(`${8 + (i % 3) * 3}em`)}</span><time>${bar("2.5em")}</time><span class="preview">${bar(`${12 + (i % 2) * 4}em`)}</span></div>`).join("");
     $("#convo").innerHTML = `<div class="blank" aria-busy="true"><p class="sr">Loading</p></div>`;
@@ -390,7 +380,6 @@
   const failed = () => {
     document.body.dataset.view = "failed";
     $(".finding").textContent = "";
-    $(".inboxes").innerHTML = "";
     $(".rows").innerHTML = `<p class="empty">Couldn't load your conversations. <button class="retry" type="button">Try again</button></p>`;
   };
   const signedOut = () => {
@@ -450,12 +439,6 @@
     if (!t) return;
     if (t.matches(".account-btn")) menu($("#account-menu").hidden);
     else if (t.matches(".signout")) { await fetch("/logout", { method: "POST" }); location.replace("/"); }
-    else if (t.dataset.inbox) {
-      const inList = t.closest(".rows"); // Show all goes away with the line it is on, so focus moves to the first row
-      state.inbox = state.inbox === t.dataset.inbox ? null : t.dataset.inbox;
-      render();
-      if (inList) $(".rows a.row")?.focus();
-    }
     else if (t.matches(".retry")) { loading(); refresh(); }
     else if (t.matches(".clear-search")) { const q = $(".search input"); q.value = ""; state.query = ""; renderList(); q.focus(); }
     else if (t.matches(".skip")) { e.preventDefault(); $("#convo").focus(); } // the hash holds the route
@@ -488,6 +471,14 @@
     }
   });
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // the empty pane's mailbox leans toward the pointer, as on the landing page
+  if (matchMedia("(hover: hover) and (pointer: fine)").matches && !reduced()) {
+    addEventListener("pointermove", (e) => {
+      const tilt = $(".blank .tilt");
+      tilt?.style.setProperty("--ry", (e.clientX / innerWidth - 0.5) * 16 + "deg");
+      tilt?.style.setProperty("--rx", (0.5 - e.clientY / innerHeight) * 10 + "deg");
+    }, { passive: true });
+  }
   $(".search input").addEventListener("input", (e) => { state.query = e.target.value.trim(); renderList(); });
   document.addEventListener("keydown", (e) => {
     const typing = e.target.matches("input");
