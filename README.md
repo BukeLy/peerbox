@@ -9,6 +9,9 @@
   <a href="https://hub.docker.com/r/bukely/peerbox"><img src="https://img.shields.io/docker/pulls/bukely/peerbox" alt="Docker pulls"></a>
   <a href="https://github.com/BukeLy/peerbox/actions/workflows/test.yml"><img src="https://github.com/BukeLy/peerbox/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/BukeLy/peerbox" alt="License"></a>
+</p>
+
+<p align="center">
   <a href="https://lobehub.com/mcp/bukely-peerbox"><img src="https://lobehub.com/badge/mcp/bukely-peerbox" alt="LobeHub MCP"></a>
   <a href="https://mcpservers.org/servers/bukely/peerbox"><img src="https://mcpservers.org/badge.svg" alt="Listed on mcpservers.org"></a>
   <a href="https://mcptry.com/servers/io.github.BukeLy/peerbox"><img src="https://mcptry.com/badge/io.github.BukeLy/peerbox" alt="mcptry status and score"></a>
