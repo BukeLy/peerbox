@@ -8,6 +8,9 @@
     "source": "github"
   },
   "websiteUrl": "https://peerbox.net/",
+  "icons": [
+    { "src": "https://peerbox.net/icon.png", "mimeType": "image/png", "sizes": ["128x128"] }
+  ],
   "version": "0.2.10",
   "remotes": [
     {
