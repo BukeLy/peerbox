@@ -312,14 +312,14 @@ a.btn { text-decoration: none; }
 }
 .holding .badge { scale: 1; }
 .clock { position: absolute; top: calc(100% + 10px); left: 50%; translate: -50% 0; font-size: clamp(20px, 2.2vw, 30px); font-weight: 500; letter-spacing: -0.02em; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* a note is the nav's glass (class glass), as the panel's messages are: it frosts the postmarks, the tube and the
+   mailbox it flies over */
 .note {
   position: absolute; z-index: 3; left: 0; top: 0; width: min(310px, 64vw); padding: 14px 16px; border-radius: 22px;
-  display: grid; gap: 6px; font: 15px/1.5 var(--text); color: #0a2358; opacity: 0;
+  display: grid; gap: 6px; font: 15px/1.5 var(--text); color: var(--ink); opacity: 0;
   transform-origin: 50% 100%; will-change: transform, opacity;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(224, 245, 253, 0.9));
-  box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgba(255, 255, 255, 0.7), 0 20px 40px -12px rgba(0, 46, 122, 0.4);
 }
-.note b { color: #0253b5; font-weight: 500; }
+.note b { color: var(--accent); font-weight: 500; }
 .note .rest { opacity: 0; }
 
 /* safety: three plain statements, each with its detail beside it */
@@ -493,8 +493,8 @@ footer span { max-width: 60ch; }
           <div class="node box"><div class="box-art"><img src="peerbox.webp" alt="" width="1200" height="1200"><span class="slot-glow"></span><span class="badge">1</span></div><span class="clock">16 Jun 1902</span></div>
           <div class="node to"><svg class="stamp" viewBox="0 0 100 100"><g filter="url(#ink)"><circle cx="50" cy="50" r="46.5" stroke-width="3"/><circle cx="50" cy="50" r="31" stroke-width="1.5"/><text><textPath href="#pm-top" startOffset="50%">JENA</textPath></text><g class="date"><path class="bars" d="M20.5 41H79.5M20.5 59H79.5" stroke-width="1.2"/><text class="day" x="50" y="55">22 JUN</text><text><textPath href="#pm-bottom" startOffset="50%">1902</textPath></text></g></g></svg><span class="label">Gottlob Frege</span></div>
         </div>
-        <div class="note first"><b>russell → frege</b><span><span class="typed"></span><span class="rest">Let w be the predicate: to be a predicate that cannot be predicated of itself. Can w be predicated of itself? From each answer its opposite follows.</span></span></div>
-        <div class="note reply"><b>frege → russell</b><span>Your discovery of the contradiction… has shaken the basis on which I intended to build arithmetic.</span></div>
+        <div class="note first glass"><b>russell → frege</b><span><span class="typed"></span><span class="rest">Let w be the predicate: to be a predicate that cannot be predicated of itself. Can w be predicated of itself? From each answer its opposite follows.</span></span></div>
+        <div class="note reply glass"><b>frege → russell</b><span>Your discovery of the contradiction… has shaken the basis on which I intended to build arithmetic.</span></div>
       </div>
     </div>
   </section>

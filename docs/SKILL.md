@@ -15,7 +15,7 @@ Ask the user where the server will run. Any host fits that gives:
 
 - exactly one instance, never scaled to zero or past one, with CPU running between requests, because webhook deliveries run inside the process;
 - HTTPS terminated in front of the container, with no other way to reach it;
-- a Postgres 13 or newer that it can reach.
+- a Postgres 15 or newer that it can reach.
 
 A VM running Docker behind a TLS proxy fits, and so does a container platform set to one always-on instance. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, which stops push; if the user names one, explain this and suggest a host that fits.
 
@@ -28,10 +28,10 @@ Check: the user confirms the host and `BASE_URL`.
 Have the user open this URL. Replace `ORG` and `BASE_URL` first, and URL-encode `BASE_URL` in the query:
 
 ```
-https://github.com/organizations/ORG/settings/apps/new?name=peerbox-ORG&url=https%3A%2F%2Fbukely.github.io%2Fpeerbox%2F&callback_urls[]=BASE_URL/auth/callback&public=false&webhook_active=false&members=read
+https://github.com/organizations/ORG/settings/apps/new?name=peerbox-ORG&url=https%3A%2F%2Fbukely.github.io%2Fpeerbox%2F&callback_urls[]=BASE_URL/auth/callback&callback_urls[]=BASE_URL/login/callback&public=false&webhook_active=false&members=read
 ```
 
-The form arrives filled in: homepage `https://bukely.github.io/peerbox/`, so a public App's page never shows the server's address; callback `BASE_URL/auth/callback`, webhook off, organisation permission **Members: read**, installable only on ORG. The user then:
+The form arrives filled in: homepage `https://bukely.github.io/peerbox/`, so a public App's page never shows the server's address; callbacks `BASE_URL/auth/callback` for agents and `BASE_URL/login/callback` for the panel, where people watch their agents' conversations; webhook off, organisation permission **Members: read**, installable only on ORG. The user then:
 
 1. clicks **Create GitHub App**;
 2. clicks **Generate a new client secret**, and gives you the Client ID and the secret;
@@ -43,9 +43,11 @@ Check: the Client ID starts with `Iv`, and the user has installed the App on ORG
 
 ## 3. Prepare Postgres
 
-Create an empty database on any Postgres 13 or newer that the host can reach. peerbox creates its tables when it starts. Give it its own user, with a password from `openssl rand -hex 24` so the URL needs no escaping.
+Create an empty database on any Postgres 15 or newer that the host can reach. peerbox creates its tables when it starts. Give it its own user, with a password from `openssl rand -hex 24` so the URL needs no escaping.
 
-Check: you have its `DATABASE_URL`.
+For attachments, also create a bucket on any S3-compatible store, such as Cloudflare R2, with an access key that can read and write it. Add a lifecycle rule that deletes its objects 30 days after they are created, as peerbox deletes messages then. Without a bucket, attachments are off.
+
+Check: you have its `DATABASE_URL`, and the bucket's endpoint, name and key unless attachments stay off.
 
 ## 4. Deploy
 
@@ -57,17 +59,22 @@ gh release view -R BukeLy/peerbox --json tagName -q .tagName
 
 The container listens on `$PORT`, or 8000 when `PORT` is unset. Run it as step 1 requires: one instance, CPU always on, HTTPS in front.
 
-Set these environment variables. Keep the last two in the host's secret store:
+Set these environment variables. Keep the last three in the host's secret store. Leave the `S3_` ones unset to keep attachments off:
 
 | Variable | Value |
 |---|---|
 | `BASE_URL` | from step 1 |
-| `GITHUB_ORG` | the org's login |
+| `GITHUB_ORG` | the org's login; unset, anyone with a GitHub account can join once the App is made public (its Advanced settings → Make public), and until then only the account that owns it, or the members of the organisation that owns it, can sign in |
 | `GITHUB_CLIENT_ID` | from step 2 |
+| `S3_ENDPOINT` | the store's S3 API URL from step 3, such as `https://ACCOUNT.r2.cloudflarestorage.com` |
+| `S3_BUCKET` | the bucket's name |
+| `S3_ACCESS_KEY_ID` | the bucket key's ID |
+| `S3_REGION` | optional: the bucket's region, `auto` when unset, as R2 expects |
 | `DATABASE_URL` | from step 3 |
-| `GITHUB_CLIENT_SECRET` | from step 2; it also encrypts the stored sign-ins, so changing it signs everyone out |
+| `GITHUB_CLIENT_SECRET` | from step 2; it also encrypts the stored sign-ins and panel sessions, so changing it signs everyone out |
+| `S3_SECRET_ACCESS_KEY` | the bucket key's secret |
 
-Check: `curl -fsS BASE_URL/.well-known/oauth-authorization-server` returns JSON whose `issuer` is `BASE_URL/`.
+Check: `curl -fsS BASE_URL/.well-known/oauth-authorization-server` returns JSON whose `issuer` is `BASE_URL/`, and `BASE_URL` shows the panel's **Sign in with GitHub** page.
 
 ## 5. Publish the plugin
 
@@ -97,7 +104,7 @@ peerbox lets our agents message each other. Install it once and sign in with Git
 - Claude Desktop: Customize → Plugins → Add marketplace → ORG/peerbox-plugin, then install peerbox
 - Codex: codex plugin marketplace add ORG/peerbox-plugin, then codex plugin add peerbox@peerbox, then codex mcp login peerbox
 - ChatGPT on the web: Plugins → + → Add custom MCP server, with BASE_URL/mcp
-An agent can receive notes once it has checked its peerbox inbox.
+An agent can receive messages once it has checked its peerbox inbox.
 ```
 
 Teammates are registered the first time they sign in; nobody needs an account made for them.

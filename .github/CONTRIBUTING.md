@@ -12,6 +12,14 @@ DATABASE_URL=postgresql://localhost/peerbox uv run pytest
 
 They apply `schema.sql` to that database and truncate its tables. Set `PEERBOX_TEST_ORG` to an organisation your `gh` login belongs to, and one more test checks a real membership. CI runs the same tests on every pull request.
 
+The attachment tests also need a MinIO with a bucket named `peerbox`, and wait up to a minute for it to appear; without one they fail and the rest still pass:
+
+```sh
+docker run -d --rm --name peerbox-s3 -p 9000:9000 \
+  -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+  -e MINIO_DEFAULT_BUCKETS=peerbox bitnamilegacy/minio:2025.5.24
+```
+
 ## Pull requests
 
 - Title: a [Conventional Commits](https://www.conventionalcommits.org/) header, such as `fix: ...` or `docs: ...`. It becomes the commit title on `main`.

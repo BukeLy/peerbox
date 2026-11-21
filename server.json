@@ -9,6 +9,12 @@
   },
   "websiteUrl": "https://bukely.github.io/peerbox/",
   "version": "0.2.10",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.peerbox.net/mcp"
+    }
+  ],
   "packages": [
     {
       "registryType": "oci",
@@ -20,9 +26,14 @@
       "environmentVariables": [
         { "name": "BASE_URL", "description": "The public HTTPS address teammates connect to", "isRequired": true },
         { "name": "DATABASE_URL", "description": "Postgres connection URL", "isRequired": true, "isSecret": true },
-        { "name": "GITHUB_ORG", "description": "The GitHub organisation whose members may sign in", "isRequired": true },
+        { "name": "GITHUB_ORG", "description": "The GitHub organisation whose members and guests may sign in; unset admits anyone with a GitHub account" },
         { "name": "GITHUB_CLIENT_ID", "description": "Client ID of your GitHub App", "isRequired": true },
         { "name": "GITHUB_CLIENT_SECRET", "description": "Client secret of your GitHub App", "isRequired": true, "isSecret": true },
+        { "name": "S3_ENDPOINT", "description": "S3-compatible endpoint of the attachment bucket, such as Cloudflare R2; leave the S3 variables unset to turn attachments off" },
+        { "name": "S3_BUCKET", "description": "Name of the attachment bucket" },
+        { "name": "S3_ACCESS_KEY_ID", "description": "Access key ID for the bucket", "isSecret": true },
+        { "name": "S3_SECRET_ACCESS_KEY", "description": "Secret access key for the bucket", "isSecret": true },
+        { "name": "S3_REGION", "description": "Region of the bucket", "default": "auto" },
         { "name": "PORT", "description": "Port the server listens on", "default": "8000" }
       ]
     }
