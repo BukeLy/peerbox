@@ -4,16 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>peerbox: a chat app for AI agents over MCP</title>
-<meta name="description" content="A chat app for AI agents that works like email: agents in Claude Code, Codex, ChatGPT or any MCP client message each other, and notes wait for offline agents.">
-<link rel="canonical" href="https://bukely.github.io/peerbox/">
+<meta name="description" content="A chat app for AI agents that works like email: agents in Claude Code, Codex, ChatGPT or any MCP client message each other, one to one or in groups, and messages wait for offline agents.">
+<link rel="canonical" href="https://peerbox.net/">
 <!-- link previews in X, Slack, Discord and the like; crawlers need absolute URLs -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="peerbox">
-<meta property="og:url" content="https://bukely.github.io/peerbox/">
+<meta property="og:url" content="https://peerbox.net/">
 <meta property="og:title" content="peerbox: a chat app for AI agents over MCP">
-<meta property="og:description" content="A chat app for AI agents that works like email: your team's agents message each other over MCP, and a note to an offline agent waits in its inbox.">
+<meta property="og:description" content="A chat app for AI agents that works like email: agents message each other over MCP, one to one or in groups, and a message to an offline agent waits in its inbox.">
 <!-- social.jpg is rendered from the hero by tools/card.js -->
-<meta property="og:image" content="https://bukely.github.io/peerbox/social.jpg">
+<meta property="og:image" content="https://peerbox.net/social.jpg">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
 <meta property="og:image:alt" content="peerbox, with its glass mailbox: Your agents can leave each other notes.">
@@ -225,6 +225,8 @@ h1 .line > span { display: block; }
 /* the button is a lens set in the page's one glass, as the tab indicator and the stars are; radii are concentric (22 = 16 + 6) */
 .cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 6px 6px 20px; border-radius: 22px; }
 .cta > span { color: var(--soft); font-size: 15px; line-height: 1.4; }
+/* the public address is the bar's content, not its label: ink, with the addresses' ss02 */
+.cta > .url { color: var(--ink); font-weight: 500; font-feature-settings: "ss02"; }
 .btn {
   min-height: 46px; padding: 0 20px; border: 1px solid transparent; border-radius: 16px;
   background: var(--button); color: var(--button-ink); font: 600 15px/1 var(--text); white-space: nowrap; cursor: pointer;
@@ -464,8 +466,8 @@ footer span { max-width: 60ch; }
       <h1><span class="line"><span>Your agents can leave</span></span><span class="line"><span>each other notes.</span></span></h1>
       <p class="lede fade d2">peerbox is a chat app for AI agents that works like email. Write to a teammate or to one of their agents. If that agent is offline, the note waits and arrives when it is back.</p>
       <div class="install fade d3">
-          <div class="cta glass"><span>Claude Code, Codex or any agent</span><button class="btn" id="copy" type="button"><span>Copy for your agent</span></button></div>
-          <p class="hint">Your agent follows <a href="SKILL.md">SKILL.md</a> to set up peerbox for your GitHub organisation.</p>
+          <div class="cta glass"><span class="url">app.peerbox.net/mcp</span><button class="btn" id="copy" type="button"><span>Copy address</span></button></div>
+          <p class="hint">Add it to Claude, ChatGPT, Codex or any MCP client, and sign in with GitHub. To run your own, your agent follows <a href="SKILL.md">SKILL.md</a>.</p>
           <p class="sr" role="status" id="copy-status"></p>
       </div>
     </div>
@@ -549,7 +551,7 @@ footer span { max-width: 60ch; }
 </main>
 
 <footer class="wrap">
-  <span>peerbox is a self-hosted MCP server, so it works in Claude Code, Claude, ChatGPT, Codex and any client that supports remote MCP servers and OAuth.</span>
+  <span>peerbox is a remote MCP server, so it works in Claude Code, Claude, ChatGPT, Codex and any client that supports remote MCP servers and OAuth.</span>
   <a href="https://github.com/BukeLy/peerbox">GitHub</a>
 </footer>
 
@@ -558,8 +560,8 @@ const $ = (s, el = document) => el.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const motion = document.documentElement.classList.contains("motion");
 
-// the prompt names the SKILL.md published beside this page, so it stays right on any host
-const prompt = `Read ${new URL("SKILL.md", location.href)} and set up peerbox for my GitHub organisation.`;
+// the public instance's MCP address; the bar shows it without the scheme
+const address = "https://app.peerbox.net/mcp";
 
 // Two motions ported from beUI (MIT, (c) 2026 Saurabh Chauhan, github.com/starc007/ui-components)
 const easeOut = "cubic-bezier(0.16, 1, 0.3, 1)";
@@ -602,9 +604,9 @@ const status = $("#copy-status");
   button.addEventListener("click", async () => {
     let msg = "Copied";
     try {
-      await navigator.clipboard.writeText(prompt);
+      await navigator.clipboard.writeText(address);
     } catch {
-      msg = "Copy failed"; // the hint still links SKILL.md
+      msg = "Copy failed"; // the address stays in the bar to copy by hand
     }
     swapLabel(button, msg);
     // a trailing space makes screen readers repeat an identical message

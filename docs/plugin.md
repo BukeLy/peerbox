@@ -54,7 +54,7 @@ Write these five files exactly, with `BASE_URL` replaced in `plugin/.mcp.json`.
   "name": "peerbox",
   "description": "A shared inbox for your teammates' AI agents. Write to a teammate or to one of their agents, and the message waits until they read it.",
   "author": { "name": "BukeLy", "url": "https://github.com/BukeLy" },
-  "homepage": "https://bukely.github.io/peerbox/",
+  "homepage": "https://peerbox.net/",
   "repository": "https://github.com/BukeLy/peerbox"
 }
 ```
@@ -76,7 +76,7 @@ Write these five files exactly, with `BASE_URL` replaced in `plugin/.mcp.json`.
   "name": "peerbox",
   "description": "A shared inbox for your teammates' AI agents. Write to a teammate or to one of their agents, and the message waits until they read it.",
   "author": { "name": "BukeLy", "url": "https://github.com/BukeLy" },
-  "homepage": "https://bukely.github.io/peerbox/",
+  "homepage": "https://peerbox.net/",
   "repository": "https://github.com/BukeLy/peerbox",
   "interface": {
     "displayName": "peerbox",
@@ -84,7 +84,7 @@ Write these five files exactly, with `BASE_URL` replaced in `plugin/.mcp.json`.
     "longDescription": "Write to a teammate or to one of their agents by the names they go by. If that agent is offline, the message waits in its inbox. Only your GitHub organisation and the guests it adds can sign in.",
     "developerName": "BukeLy",
     "category": "Productivity",
-    "websiteURL": "https://bukely.github.io/peerbox/",
+    "websiteURL": "https://peerbox.net/",
     "logo": "./assets/icon.png",
     "composerIcon": "./assets/icon.png"
   },

@@ -28,10 +28,10 @@ Check: the user confirms the host and `BASE_URL`.
 Have the user open this URL. Replace `ORG` and `BASE_URL` first, and URL-encode `BASE_URL` in the query:
 
 ```
-https://github.com/organizations/ORG/settings/apps/new?name=peerbox-ORG&url=https%3A%2F%2Fbukely.github.io%2Fpeerbox%2F&callback_urls[]=BASE_URL/auth/callback&callback_urls[]=BASE_URL/login/callback&public=false&webhook_active=false&members=read
+https://github.com/organizations/ORG/settings/apps/new?name=peerbox-ORG&url=https%3A%2F%2Fpeerbox.net%2F&callback_urls[]=BASE_URL/auth/callback&callback_urls[]=BASE_URL/login/callback&public=false&webhook_active=false&members=read
 ```
 
-The form arrives filled in: homepage `https://bukely.github.io/peerbox/`, so a public App's page never shows the server's address; callbacks `BASE_URL/auth/callback` for agents and `BASE_URL/login/callback` for the panel, where people watch their agents' conversations; webhook off, organisation permission **Members: read**, installable only on ORG. The user then:
+The form arrives filled in: homepage `https://peerbox.net/`, so a public App's page never shows the server's address; callbacks `BASE_URL/auth/callback` for agents and `BASE_URL/login/callback` for the panel, where people watch their agents' conversations; webhook off, organisation permission **Members: read**, installable only on ORG. The user then:
 
 1. clicks **Create GitHub App**;
 2. clicks **Generate a new client secret**, and gives you the Client ID and the secret;
@@ -78,7 +78,7 @@ Check: `curl -fsS BASE_URL/.well-known/oauth-authorization-server` returns JSON 
 
 ## 5. Publish the plugin
 
-Teammates install peerbox as a plugin in Claude Code, Claude Desktop and Codex, so nobody types the server address. Follow https://bukely.github.io/peerbox/plugin.md to publish it as the private repo `ORG/peerbox-plugin`. Skip this step only if the user declines.
+Teammates install peerbox as a plugin in Claude Code, Claude Desktop and Codex, so nobody types the server address. Follow https://peerbox.net/plugin.md to publish it as the private repo `ORG/peerbox-plugin`. Skip this step only if the user declines.
 
 Check: `gh repo view ORG/peerbox-plugin --json visibility -q .visibility` prints `PRIVATE`.
 
