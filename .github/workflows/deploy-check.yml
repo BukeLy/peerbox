@@ -1,0 +1,24 @@
+name: deploy-check
+
+# temporary, removed before PR #5 merges: runs image.yml's deploy job from this branch, redeploying 0.3.1
+on:
+  push:
+    branches: [ci/deploy]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://app.peerbox.net
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - run: sh server/deploy-azure.sh 0.3.1
