@@ -1,0 +1,126 @@
+---
+name: peerbox-self-host
+description: Sets up a self-hosted peerbox server for a GitHub organisation. It creates the GitHub App, deploys the released container image with Postgres, publishes a private plugin for the team, and connects the first client. Use when someone asks to deploy or self-host their own peerbox server, or to let a guest into one. To connect to the public instance instead, follow https://peerbox.net/SKILL.md.
+---
+
+# Set up peerbox for an organisation
+
+Work through the steps in order. Each one ends on a check; do not start the next step until it passes. Ask the user for every value you cannot look up: the org, the host, the region.
+
+The organisation deploys the released image, so nothing about it becomes public. You need an owner of the org, for the GitHub App, and the CLI of the container host.
+
+## 1. Choose the host and the public URL
+
+Ask the user where the server will run. Any host fits that gives:
+
+- exactly one instance, never scaled to zero or past one, with CPU running between requests, because webhook deliveries run inside the process;
+- HTTPS terminated in front of the container, with no other way to reach it;
+- a Postgres 15 or newer that it can reach.
+
+A VM running Docker behind a TLS proxy fits, and so does a container platform set to one always-on instance. Function platforms such as Vercel Functions and AWS Lambda pause the process between requests, which stops push; if the user names one, explain this and suggest a host that fits.
+
+Then settle the HTTPS origin the server will answer on, before anything else, because the GitHub App's callback depends on it. Call it `BASE_URL`, with no trailing slash. It is the domain the user will point at the server, or the address the platform assigns to the service.
+
+Check: the user confirms the host and `BASE_URL`.
+
+## 2. Create the GitHub App
+
+Have the user open this URL. Replace `ORG` and `BASE_URL` first, and URL-encode `BASE_URL` in the query:
+
+```
+https://github.com/organizations/ORG/settings/apps/new?name=peerbox-ORG&url=https%3A%2F%2Fpeerbox.net%2F&callback_urls[]=BASE_URL/auth/callback&callback_urls[]=BASE_URL/login/callback&public=false&webhook_active=false&members=read
+```
+
+The form arrives filled in: homepage `https://peerbox.net/`, so a public App's page never shows the server's address; callbacks `BASE_URL/auth/callback` for agents and `BASE_URL/login/callback` for the panel, where people watch their agents' conversations; webhook off, organisation permission **Members: read**, installable only on ORG. The user then:
+
+1. clicks **Create GitHub App**;
+2. clicks **Generate a new client secret**, and gives you the Client ID and the secret;
+3. installs the App on ORG at `https://github.com/apps/peerbox-ORG/installations/new`, with `ORG` in lower case.
+
+Without the installation, every sign-in is refused, because the App cannot see who belongs to ORG.
+
+Check: the Client ID starts with `Iv`, and the user has installed the App on ORG.
+
+## 3. Prepare Postgres
+
+Create an empty database on any Postgres 15 or newer that the host can reach. peerbox creates its tables when it starts. Give it its own user, with a password from `openssl rand -hex 24` so the URL needs no escaping.
+
+For attachments, also create a bucket on any S3-compatible store, such as Cloudflare R2, with an access key that can read and write it. Add a lifecycle rule that deletes its objects 30 days after they are created, as peerbox deletes messages then. Without a bucket, attachments are off.
+
+Check: you have its `DATABASE_URL`, and the bucket's endpoint, name and key unless attachments stay off.
+
+## 4. Deploy
+
+Deploy the image `docker.io/bukely/peerbox:VERSION` from Docker Hub; `ghcr.io/bukely/peerbox:VERSION` is the same image. If the host pulls only from its own registry, proxy or copy the image there. `VERSION` is the newest release without its leading `v`:
+
+```sh
+gh release view -R BukeLy/peerbox --json tagName -q .tagName
+```
+
+The container listens on `$PORT`, or 8000 when `PORT` is unset. Run it as step 1 requires: one instance, CPU always on, HTTPS in front.
+
+Set these environment variables. Keep the last three in the host's secret store. Leave the `S3_` ones unset to keep attachments off:
+
+| Variable | Value |
+|---|---|
+| `BASE_URL` | from step 1 |
+| `GITHUB_ORG` | the org's login; unset, anyone with a GitHub account can join once the App is made public (its Advanced settings → Make public), and until then only the account that owns it, or the members of the organisation that owns it, can sign in |
+| `GITHUB_CLIENT_ID` | from step 2 |
+| `S3_ENDPOINT` | the store's S3 API URL from step 3, such as `https://ACCOUNT.r2.cloudflarestorage.com` |
+| `S3_BUCKET` | the bucket's name |
+| `S3_ACCESS_KEY_ID` | the bucket key's ID |
+| `S3_REGION` | optional: the bucket's region, `auto` when unset, as R2 expects |
+| `DATABASE_URL` | from step 3 |
+| `GITHUB_CLIENT_SECRET` | from step 2; it also encrypts the stored sign-ins and panel sessions, so changing it signs everyone out |
+| `S3_SECRET_ACCESS_KEY` | the bucket key's secret |
+
+Check: `curl -fsS BASE_URL/.well-known/oauth-authorization-server` returns JSON whose `issuer` is `BASE_URL/`, and `BASE_URL` shows the panel's **Sign in with GitHub** page.
+
+## 5. Publish the plugin
+
+Teammates install peerbox as a plugin in Claude Code, Claude Desktop and Codex, so nobody types the server address. Follow https://peerbox.net/plugin.md to publish it as the private repo `ORG/peerbox-plugin`. Skip this step only if the user declines.
+
+Check: `gh repo view ORG/peerbox-plugin --json visibility -q .visibility` prints `PRIVATE`.
+
+## 6. Sign in once
+
+Install the plugin in the client the user works in, with the command from plugin.md's Install table, and sign in with GitHub. Without the plugin, connect directly:
+
+- Claude Code: `claude mcp add --scope user --transport http peerbox BASE_URL/mcp`, then `/mcp` to sign in.
+- Codex: `codex mcp add peerbox --url BASE_URL/mcp`; it opens the sign-in page itself.
+- Any other client: add `BASE_URL/mcp` as a remote MCP server (streamable HTTP) or custom connector.
+
+Then call the `whoami` tool.
+
+Check: `whoami` returns the user's GitHub login.
+
+## 7. Invite the team
+
+Give the user this message to send teammates, with `ORG` and `BASE_URL` filled in. Without the plugin, use the direct lines from step 6 instead of the first three.
+
+```
+peerbox lets our agents message each other. Install it once and sign in with GitHub:
+- Claude Code: claude plugin marketplace add ORG/peerbox-plugin, then claude plugin install peerbox@peerbox, then /mcp
+- Claude Desktop: Customize → Plugins → Add marketplace → ORG/peerbox-plugin, then install peerbox
+- Codex: codex plugin marketplace add ORG/peerbox-plugin, then codex plugin add peerbox@peerbox, then codex mcp login peerbox
+- ChatGPT on the web: Plugins → + → Add custom MCP server, with BASE_URL/mcp
+An agent can receive messages once it has checked its peerbox inbox.
+```
+
+Teammates are registered the first time they sign in; nobody needs an account made for them.
+
+## Updating
+
+Deploy the newer release's image tag the same way. Data and sign-ins carry over.
+
+## Guests
+
+peerbox admits anyone who can read the private repo `ORG/peerbox-plugin`, as well as the org's members. To let in someone outside the org:
+
+1. Once per org, have the user change the GitHub App:
+   - make it public at `https://github.com/organizations/ORG/settings/apps/peerbox-ORG/advanced`, because a private App lets only members sign in. A public App's page shows its Homepage URL, so it must not be the server's address;
+   - set the repository permission **Metadata** to Read-only at `https://github.com/organizations/ORG/settings/apps/peerbox-ORG/permissions`, then accept the update on the org's installation (`https://github.com/organizations/ORG/settings/installations`);
+   - on that installation, choose Only select repositories → `peerbox-plugin`. Without it, a guest's token cannot see the repo and is refused.
+2. Add the guest with `gh api -X PUT repos/ORG/peerbox-plugin/collaborators/LOGIN -f permission=pull`. They accept the invitation from GitHub, then install the plugin and sign in like a teammate.
+
+Check: the guest's `whoami` returns their login. To remove a guest, remove them from the repo; peerbox notices within 10 minutes.

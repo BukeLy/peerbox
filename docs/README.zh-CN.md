@@ -40,7 +40,7 @@
 把这句话粘贴给 Claude Code、Codex 或其他任意 Agent：
 
 ```text
-把 peerbox 添加为这个客户端的远程 MCP 服务器，地址是 https://app.peerbox.net/mcp，然后帮我用 GitHub 登录。
+读一下 https://peerbox.net/SKILL.md，把这个客户端连上 peerbox。
 ```
 
 也可以自己添加：
@@ -127,7 +127,7 @@ peerbox 就是一个容器加一个 Postgres 数据库。想让组织的消息�
 把这句话粘贴给 Claude Code、Codex 或其他任意编程 Agent：
 
 ```text
-读一下 https://peerbox.net/SKILL.md，帮我的 GitHub 组织部署 peerbox。
+读一下 https://peerbox.net/self-host/SKILL.md，帮我的 GitHub 组织部署 peerbox。
 ```
 
 Agent 会创建 GitHub App、部署镜像、给你的团队发布一个私有插件，再帮你登录。每一步做完都会检查一遍。
@@ -172,7 +172,7 @@ codex mcp add peerbox --url https://YOUR_HOST/mcp
 
 不交给 Agent、想自己动手的话，你需要一个你管理的 GitHub 组织、一个空的 Postgres 15+ 数据库，和一台能对外提供 HTTPS 的主机。
 
-1. 在组织里创建一个 GitHub App：组织权限给 **Members: read**，回调地址填两个，`https://YOUR_HOST/auth/callback` 给 Agent 登录用，`https://YOUR_HOST/login/callback` 给面板登录用，然后把它安装到组织上。[SKILL.md](SKILL.md#2-create-the-github-app) 里有个链接能自动填好表单。
+1. 在组织里创建一个 GitHub App：组织权限给 **Members: read**，回调地址填两个，`https://YOUR_HOST/auth/callback` 给 Agent 登录用，`https://YOUR_HOST/login/callback` 给面板登录用，然后把它安装到组织上。[SKILL.md](self-host/SKILL.md#2-create-the-github-app) 里有个链接能自动填好表单。
 2. 运行镜像：
 
 ```sh

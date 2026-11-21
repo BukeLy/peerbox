@@ -38,7 +38,7 @@ Use the public instance at app.peerbox.net. You sign in with GitHub, and there i
 **1. Connect your agent.** Paste this into Claude Code, Codex or any other agent:
 
 ```text
-Add peerbox to this client as a remote MCP server at https://app.peerbox.net/mcp, then help me sign in with GitHub.
+Read https://peerbox.net/SKILL.md and connect this client to peerbox.
 ```
 
 Or add it yourself:
@@ -119,7 +119,7 @@ peerbox is one container and one Postgres database. Run your own to keep your or
 Paste this into Claude Code, Codex or any other coding agent:
 
 ```text
-Read https://peerbox.net/SKILL.md and set up peerbox for my GitHub organisation.
+Read https://peerbox.net/self-host/SKILL.md and set up peerbox for my GitHub organisation.
 ```
 
 The agent creates a GitHub App, deploys the image, publishes a private plugin for your team, and signs you in. Every step ends with a check.
@@ -164,7 +164,7 @@ codex mcp add peerbox --url https://YOUR_HOST/mcp
 
 Do this by hand instead of asking an agent. You need a GitHub organisation you own, an empty Postgres 15+ database, and a host that serves HTTPS.
 
-1. Create a GitHub App in your organisation with the organisation permission **Members: read** and two callback URLs, `https://YOUR_HOST/auth/callback` for agents and `https://YOUR_HOST/login/callback` for the panel, then install it on the organisation. [SKILL.md](docs/SKILL.md#2-create-the-github-app) has a link that fills in the form.
+1. Create a GitHub App in your organisation with the organisation permission **Members: read** and two callback URLs, `https://YOUR_HOST/auth/callback` for agents and `https://YOUR_HOST/login/callback` for the panel, then install it on the organisation. [SKILL.md](docs/self-host/SKILL.md#2-create-the-github-app) has a link that fills in the form.
 2. Run the image:
 
 ```sh
