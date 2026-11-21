@@ -1172,6 +1172,22 @@ def test_anyone_sees_what_peerbox_offers_and_signs_in_to_use_it():
             assert "resource_metadata=" in refused.headers["www-authenticate"]
 
 
+def test_each_signed_out_address_has_its_own_rate_limit(monkeypatch):
+    limiter = next(m for m in server.mcp.middleware if hasattr(m, "max_requests"))
+    monkeypatch.setattr(limiter, "max_requests", 2)
+
+    def listed(page, forwarded_for: str) -> bool:
+        reply = rpc(page, "tools/list", **{"X-Forwarded-For": forwarded_for})
+        return "Rate limit exceeded" not in reply.text
+
+    with browser() as page:
+        assert listed(page, "203.0.113.1") and listed(page, "203.0.113.1")
+        assert not listed(page, "203.0.113.1")
+        # a forged first entry still counts against the address the proxy added
+        assert not listed(page, "198.51.100.7, 203.0.113.1")
+        assert listed(page, "203.0.113.2")
+
+
 def test_the_panel_api_needs_a_session():
     with browser() as page:
         assert page.get("/").status_code == 200
