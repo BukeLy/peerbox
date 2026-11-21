@@ -36,6 +36,26 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+  # moves the public instance to the image just pushed, signing in to Azure as the production
+  # environment through GitHub OIDC; the environment lists each deployment in the repo's sidebar
+  deploy:
+    needs: image
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://app.peerbox.net
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - run: sh server/deploy-azure.sh "${GITHUB_REF_NAME#v}"
+
   # lists the image just pushed in the official MCP Registry, signing in as this repo through GitHub OIDC
   registry:
     needs: image

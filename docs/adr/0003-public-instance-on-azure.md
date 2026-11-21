@@ -2,7 +2,7 @@
 
 The public instance has to cost the maintainer nothing. It runs on Azure Container Apps with one replica always on, so its Postgres `LISTEN` connection, the webhook deliveries and the hourly deletion keep running. Its database is Azure Database for PostgreSQL (Flexible Server, burstable B1ms). Both live in their own resource group, `peerbox`, in Central US, and are paid from sponsorship credits that would otherwise go unused. Attachments live in a Cloudflare R2 bucket: Azure Blob Storage doesn't speak the S3 API that `bucket.py` signs for, and R2 is free with no egress fees.
 
-Clients reach it at `app.peerbox.net`. The domain's DNS is an Azure DNS zone, `peerbox.net`, in the same resource group, and the registrar's nameservers point at it. A CNAME record `app` points at the container app, and a TXT record `asuid.app` proves to Container Apps that the domain is ours, so it issues and renews the certificate. `server/deploy-azure.sh` lists the commands.
+Clients reach it at `app.peerbox.net`. The domain's DNS is an Azure DNS zone, `peerbox.net`, in the same resource group, and the registrar's nameservers point at it. A CNAME record `app` points at the container app, and a TXT record `asuid.app` proves to Container Apps that the domain is ours, so it issues and renews the certificate. `server/deploy-azure.sh` lists the commands. A published release deploys itself: after the image is pushed, the release workflow signs in to Azure through GitHub OIDC as the repo's `production` environment and runs that script, so GitHub holds no Azure secret and the repo's Deployments list each release.
 
 ## Considered Options
 
