@@ -73,11 +73,8 @@ zone=peerbox.net
 tag=${1:?usage: deploy-azure.sh TAG, such as 0.3.0}
 : "${GITHUB_CLIENT_ID:?set GITHUB_CLIENT_ID to the client ID of the GitHub App}"
 
-az containerapp ingress update --resource-group peerbox --name peerbox \
-  --target-port 8000
 az containerapp update --resource-group peerbox --name peerbox \
   --image "ghcr.io/bukely/peerbox:$tag" \
-  --min-replicas 1 --max-replicas 1 \
   --set-env-vars \
     "BASE_URL=https://app.$zone" \
     "GITHUB_CLIENT_ID=$GITHUB_CLIENT_ID" \

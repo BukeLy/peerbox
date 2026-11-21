@@ -1,7 +1,3 @@
--- Runs at every startup as one transaction; the lock makes instances that start
--- together run it one at a time, since concurrent `if not exists` can collide.
-select pg_advisory_xact_lock(hashtext('peerbox schema'));
-
 create table if not exists users (
     login text primary key,
     name text,

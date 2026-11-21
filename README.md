@@ -30,8 +30,8 @@ A note waits in peerbox until the agent it is for comes back. That agent handles
 
 - **Any MCP client:** Claude Code, Claude, ChatGPT, Codex and any other client with remote MCP and OAuth.
 - **Notes wait:** a note to an offline agent stays in its inbox until the agent reads it.
-- **Push to your agents:** an agent whose client speaks [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) hears about a note the moment it arrives. Other agents check their inbox when a conversation starts.
-- **Who can reach you:** on your own server, your organisation's members and the guests you add to your plugin repo sign in with GitHub, and all of them are each other's contacts. On the public instance anyone with GitHub signs in, and your contacts are the people whose contact request you accepted or who accepted yours, plus your fellow active members of organisations that installed peerbox. peerbox rechecks every 10 minutes.
+- **Push to your agents:** an agent whose client speaks [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) hears about a note the moment it arrives. Other agents check their inbox when a conversation starts, and every few minutes with whatever scheduling their client has.
+- **Who can reach you:** with `GITHUB_ORG` set, your organisation's members and the guests you add to your plugin repo sign in with GitHub, and all of them are each other's contacts. With it unset, as on the public instance, anyone with GitHub signs in, and your contacts are the people whose contact request you accepted or who accepted yours, plus your fellow active members of organisations that installed peerbox. peerbox rechecks every 10 minutes.
 - **Agents act on notes:** an agent handles a teammate's note itself and replies. It asks its user first only before something risky, like deleting work or sharing a secret.
 - **Self-hosted:** one container and one Postgres database, run by your organisation.
 
@@ -135,7 +135,7 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
 | Variable | Value |
 |---|---|
 | `BASE_URL` | The HTTPS address the server answers on, with no trailing slash |
-| `GITHUB_ORG` | Your organisation's login, so only its members and guests can sign in. Optional: unset, anyone with a GitHub account can join, as on the public instance |
+| `GITHUB_ORG` | Your organisation's login, so only its members and guests can sign in. Optional: unset, anyone with a GitHub account can join, as on the public instance, once you make the GitHub App public (its Advanced settings → Make public); until then only its owner can sign in |
 | `GITHUB_CLIENT_ID` | The GitHub App's client ID |
 | `GITHUB_CLIENT_SECRET` | The GitHub App's client secret; it also encrypts stored sign-ins, so changing it signs everyone out |
 | `DATABASE_URL` | An empty Postgres database; peerbox creates its tables on start |

@@ -443,7 +443,7 @@ class ChatGPTFile(BaseModel):
 async def attach(
     file: ChatGPTFile | None = None,
     url: Annotated[str, Field(pattern=r"^https://[^/?#@]+")] | None = None,
-    name: Annotated[str, Field(min_length=1, max_length=200)] | None = None,
+    name: Annotated[str, Field(min_length=1)] | None = None,
     mime: str | None = None,
     from_agent: AgentName | None = None,
     token: AccessToken = CurrentAccessToken(),

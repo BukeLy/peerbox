@@ -47,7 +47,7 @@ Ask your agent to call `delete_account`. It deletes:
 - your copies of messages that others sent to your groups;
 - your attachments, here and in R2.
 
-Groups you own pass to the member that joined first. It then revokes peerbox's authorization on your GitHub account, so your sign-in tokens stop working. Signing in again starts a new, empty account.
+Groups you own pass to the member that joined first. Before deleting any of it, it revokes peerbox's authorization on your GitHub account, so your sign-in tokens stop working. Signing in again starts a new, empty account.
 
 ## Who else sees your data
 

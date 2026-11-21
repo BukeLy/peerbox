@@ -258,7 +258,7 @@
     : `<a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h6.5L15 6v11.5H5z"/><path d="M11.5 2.5V6H15"/></svg><span class="fname">${esc(f.name)}</span><span class="size">${esc(size(f.size ?? 0))}</span></a>`).join("")}</div>` : "");
   const renderTranscript = (conversation) => {
     let day = "", prev = null;
-    const parts = [conversation.has_more ? `<button class="older" type="button">Show earlier messages</button>` : `<p class="kept">Messages are kept for 30 days.</p>`];
+    const parts = [conversation.has_more ? `<button class="older" id="older" type="button">Show earlier messages</button>` : `<p class="kept">Messages are kept for 30 days.</p>`];
     for (const m of conversation.messages) {
       const d = new Date(m.sent_at);
       if (dayName(d) !== day) { day = dayName(d); prev = null; parts.push(`<p class="day">${esc(day)}</p>`); }
@@ -349,7 +349,18 @@
     const old = $("#title");
     if (old.localName !== tag) old.outerHTML = `<${tag} id="title">Conversations</${tag}>`;
   };
+  // what finds the focused element again once a redraw replaces it: its id, data-inbox (in the head or the list)
+  // or data-key, or the message whose delivery list it opens
+  const focusKey = (el) => {
+    if (el.id) return `#${CSS.escape(el.id)}`;
+    if (el.dataset.inbox) return `${el.closest(".inboxes") ? ".inboxes" : ".rows"} [data-inbox="${CSS.escape(el.dataset.inbox)}"]`;
+    if (el.dataset.key) return `.row[data-key="${CSS.escape(el.dataset.key)}"]`;
+    if (el.matches(".deliveries summary")) return `#${el.closest(".msg").id} summary`;
+    return null;
+  };
   const render = () => {
+    const focused = document.activeElement && focusKey(document.activeElement);
+    const opened = [...document.querySelectorAll(".deliveries[open]")].map((d) => d.closest(".msg").id);
     $(".signin")?.remove();
     document.body.dataset.view = view();
     pageTitle(narrow() && route().key ? "p" : "h1");
@@ -363,6 +374,8 @@
     const key = route().key;
     document.title = `${key ? label(key) : "Conversations"} · peerbox`;
     state.arrived.clear();
+    for (const id of opened) document.getElementById(id)?.querySelector(".deliveries")?.setAttribute("open", "");
+    if (focused) $(focused)?.focus({ preventScroll: true });
   };
   const loading = () => {
     const bar = (w) => `<span class="bar" style="width:${w}"></span>`;
@@ -443,6 +456,7 @@
     }
     else if (t.matches(".retry")) { loading(); refresh(); }
     else if (t.matches(".clear-search")) { const q = $(".search input"); q.value = ""; state.query = ""; renderList(); q.focus(); }
+    else if (t.matches(".skip")) { e.preventDefault(); $("#convo").focus(); } // the hash holds the route
     else if (t.dataset.jump) {
       e.preventDefault(); // the hash holds the route
       const m = document.getElementById(t.dataset.jump);
@@ -463,7 +477,8 @@
         render();
         const s2 = $(".transcript");
         s2.scrollTop = s2.scrollHeight - fromEnd;
-      } catch { t.disabled = false; t.textContent = "Couldn't load earlier messages. Try again"; }
+        $("#older")?.focus({ preventScroll: true }); // disabling it while loading dropped the focus
+      } catch { t.disabled = false; t.textContent = "Couldn't load earlier messages. Try again"; t.focus(); }
     }
   });
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;

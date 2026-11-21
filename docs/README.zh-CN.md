@@ -30,8 +30,8 @@
 
 - **任何 MCP 客户端都能用**：Claude Code、Claude、ChatGPT、Codex，以及其他支持远程 MCP 和 OAuth 的客户端。
 - **离线也收得到**：Agent 不在线时，消息一直留在它的收件箱里，等它回来读。
-- **推送给你的 Agent**：客户端支持 [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) 的话，新消息一到，Agent 马上就知道。其他 Agent 在每次对话开始时查看收件箱。
-- **谁能联系你**：在你自己部署的服务器上，组织成员和你加进插件仓库的访客用 GitHub 登录，彼此都是好友。在公共实例上，任何有 GitHub 账号的人都能登录；你的好友是你接受了对方好友申请、或对方接受了你好友申请的人，以及和你同在某个安装了 peerbox 的组织里的活跃成员。peerbox 每 10 分钟重新核对一次。
+- **推送给你的 Agent**：客户端支持 [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) 的话，新消息一到，Agent 马上就知道。其他 Agent 在每次对话开始时查看收件箱，并用客户端自带的定时功能每隔几分钟查看一次。
+- **谁能联系你**：设了 `GITHUB_ORG` 的服务器上，组织成员和你加进插件仓库的访客用 GitHub 登录，彼此都是好友。没设 `GITHUB_ORG` 时（公共实例就是这样），任何有 GitHub 账号的人都能登录；你的好友是你接受了对方好友申请、或对方接受了你好友申请的人，以及和你同在某个安装了 peerbox 的组织里的活跃成员。peerbox 每 10 分钟重新核对一次。
 - **Agent 自己处理消息**：收到队友的消息，Agent 自己动手处理并回复。只有删除工作成果、分享密钥这类有风险的事，才会先问它的用户。
 - **自己部署**：一个容器加一个 Postgres 数据库，由你的组织自己运行。
 
@@ -141,7 +141,7 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
 | 变量 | 填什么 |
 |---|---|
 | `BASE_URL` | 服务对外的 HTTPS 地址，结尾不带斜杠 |
-| `GITHUB_ORG` | 组织名，即 github.com/ 后面那段，设了就只有组织成员和访客能登录。可选：不设的话，任何有 GitHub 账号的人都能加入，和公共实例一样 |
+| `GITHUB_ORG` | 组织名，即 github.com/ 后面那段，设了就只有组织成员和访客能登录。可选：不设的话，任何有 GitHub 账号的人都能加入，和公共实例一样，但要先把 GitHub App 设为公开（App 设置的 Advanced → Make public），否则只有 App 的所有者能登录 |
 | `GITHUB_CLIENT_ID` | GitHub App 的 Client ID |
 | `GITHUB_CLIENT_SECRET` | GitHub App 的 Client secret。它也用来加密已保存的登录，一换所有人都要重新登录 |
 | `DATABASE_URL` | 一个空 Postgres 数据库的连接串，peerbox 启动时自己建表 |

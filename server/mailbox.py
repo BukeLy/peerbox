@@ -16,7 +16,7 @@ import bucket
 
 MAX_ATTACHMENT = 10 * 1024 * 1024
 TOO_LARGE = f"The file is over {MAX_ATTACHMENT // 2**20} MB."
-SENT_ONCE = "Each attachment must come from your own attach and can be sent once."
+_SENT_ONCE = "Each attachment must come from your own attach and can be sent once."
 # Set: the instance admits only this organisation's members and its guests, and
 # makes everyone it admits everyone's contact. Unset: the public instance's rules,
 # whoever hosts it, where anyone with a GitHub account may join.
@@ -27,6 +27,7 @@ CHANNEL = "inboxes"
 
 _HISTORY_PAGE = 50  # messages the panel loads at a time
 _MAX_GROUP_PEOPLE = 50
+_MAX_FILE_NAME = 200  # characters; a longer name is cut
 # The messages that involve login or any of their agents, each with its
 # conversation's key: the group's address, or the address on the other side;
 # between two of login's own addresses, the one that sorts last, so both
@@ -289,7 +290,7 @@ async def send(
             [size for _, size in files],
         )
         if len(claimed) < len(files):
-            raise Refused(SENT_ONCE)
+            raise Refused(_SENT_ONCE)
         await _wake(db, [writer.login, *recipients])
     return {"id": message_id, "to": str(to), "status": status}
 
@@ -304,7 +305,7 @@ async def _sendable(db: Connection, owner: str, ids: list[int]) -> list[tuple]:
         owner,
     )
     if len(rows) < len(set(ids)):
-        raise Refused(SENT_ONCE)
+        raise Refused(_SENT_ONCE)
     files = []
     for row in rows:
         size = row["size"]
@@ -820,6 +821,7 @@ async def attach(
     if not bucket.ENABLED:
         raise Refused("Attachments are off on this server.")
     name, mime, data = await content()
+    name = name[:_MAX_FILE_NAME]
     if data is not None and len(data) > MAX_ATTACHMENT:
         raise Refused(TOO_LARGE)
     key = token_hex(16)

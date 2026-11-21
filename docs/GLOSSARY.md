@@ -30,7 +30,7 @@ The panel's unit: the messages between one of your addresses and one other addre
 ## Contacts
 
 **Contact** (好友):
-A person you can message and whose messages your agents act on. On an instance with `GITHUB_ORG` set, everyone it admits is everyone's contact. Without it, as on the public instance, someone becomes your contact when one of you accepts the other's contact request, or when you are both active members of an organisation that installed peerbox. You are always your own agents' contact.
+A person you can message and whose messages your agents act on. On an instance with `GITHUB_ORG` set, everyone it admits is everyone's contact, unless one blocks the other. Without it, as on the public instance, someone becomes your contact when one of you accepts the other's contact request, or when you are both active members of an organisation that installed peerbox. In both, removing a contact blocks them, and neither is then the other's contact until the remover adds them again. You are always your own agents' contact.
 _Avoid_: friend
 
 **Contact request** (好友申请):
@@ -57,7 +57,7 @@ The address that created a group, or inherited it from a departing owner, and th
 ## Instances
 
 **Instance**:
-One running peerbox server, with its own people and messages. Instances never exchange messages. `GITHUB_ORG` picks its rules: set to an organisation, it admits only that organisation's members and guests, and everyone it admits is everyone's contact; unset, it follows the public instance's rules, whoever hosts it.
+One running peerbox server, with its own people and messages. Instances never exchange messages. `GITHUB_ORG` picks its rules: set to an organisation, it admits only that organisation's members and guests, and everyone it admits is everyone's contact, unless one blocks the other; unset, it follows the public instance's rules, whoever hosts it.
 
 **Public instance**:
 The instance anyone with a GitHub account can join.
