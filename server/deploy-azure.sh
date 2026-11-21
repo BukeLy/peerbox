@@ -2,12 +2,13 @@
 # Updates the public instance (docs/adr/0003-public-instance-on-azure.md) to a
 # release's image, given its tag without the leading v:
 #
-#   GITHUB_CLIENT_ID=Iv23... server/deploy-azure.sh 0.3.0
+#   server/deploy-azure.sh 0.3.0
 #
-# The instance answers at https://app.$zone, where zone is the domain below. Run it
-# with the Azure CLI signed in to the subscription that holds the resource group
-# peerbox. Environment variables set earlier and not named here, such as the S3_
-# ones, stay as they are.
+# A published release runs it from .github/workflows/image.yml. The instance
+# answers at https://app.$zone, where zone is the domain below. Run it with the
+# Azure CLI signed in to the subscription that holds the resource group peerbox.
+# Environment variables set earlier and not named here, such as the S3_ ones,
+# stay as they are.
 #
 # One-time setup:
 #
@@ -67,16 +68,54 @@
 #   az containerapp update --resource-group peerbox --name peerbox --set-env-vars \
 #     S3_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com S3_BUCKET=BUCKET \
 #     S3_ACCESS_KEY_ID=KEY_ID S3_SECRET_ACCESS_KEY=secretref:s3-secret-access-key
+#
+# The site at https://$zone is this repo's GitHub Pages (docs/CNAME names it):
+#
+#   for ip in 185.199.108.153 185.199.109.153 185.199.110.153 185.199.111.153; do
+#     az network dns record-set a add-record --resource-group peerbox \
+#       --zone-name "$zone" --record-set-name @ --ipv4-address "$ip"; done
+#   for ip in 2606:50c0:8000::153 2606:50c0:8001::153 2606:50c0:8002::153 \
+#     2606:50c0:8003::153; do az network dns record-set aaaa add-record \
+#       --resource-group peerbox --zone-name "$zone" --record-set-name @ \
+#       --ipv6-address "$ip"; done
+#   az network dns record-set cname set-record --resource-group peerbox \
+#     --zone-name "$zone" --record-set-name www --cname bukely.github.io
+#
+# Verify the domain for the account too (GitHub settings → Pages → Add a domain)
+# and add the TXT record it names, so no other account can take $zone if the
+# site's binding ever lapses: agents follow https://$zone/SKILL.md.
+#
+# The release's deploy job signs in to Azure through GitHub OIDC as this repo's
+# production environment, as an identity that may change only the container app.
+# No Azure secret is stored in GitHub; the environment's variables hold its IDs.
+# GitHub's token names the owner and the repo with their IDs too
+# (gh api users/BukeLy -q .id; gh api repos/BukeLy/peerbox -q .id), so a repo
+# recreated under the same name can't pass for this one:
+#
+#   app=$(az ad app create --display-name peerbox-deploy --query appId --output tsv)
+#   az ad sp create --id "$app"
+#   az ad app federated-credential create --id "$app" --parameters '{"name":
+#     "github-production", "issuer": "https://token.actions.githubusercontent.com",
+#     "subject": "repo:BukeLy@19304666/peerbox@1463640876:environment:production",
+#     "audiences": ["api://AzureADTokenExchange"]}'
+#   az role assignment create --assignee "$app" --role Contributor --scope \
+#     "$(az containerapp show --resource-group peerbox --name peerbox --query id \
+#     --output tsv)"
+#   gh variable set AZURE_CLIENT_ID --env production --body "$app"
+#   gh variable set AZURE_TENANT_ID --env production \
+#     --body "$(az account show --query tenantId --output tsv)"
+#   gh variable set AZURE_SUBSCRIPTION_ID --env production \
+#     --body "$(az account show --query id --output tsv)"
 set -eu
 
 zone=peerbox.net
+client_id=Iv23lizyV03bCCUqjTc9 # the peerbox-net GitHub App's; a client ID is public
 tag=${1:?usage: deploy-azure.sh TAG, such as 0.3.0}
-: "${GITHUB_CLIENT_ID:?set GITHUB_CLIENT_ID to the client ID of the GitHub App}"
 
 az containerapp update --resource-group peerbox --name peerbox \
   --image "ghcr.io/bukely/peerbox:$tag" \
   --set-env-vars \
     "BASE_URL=https://app.$zone" \
-    "GITHUB_CLIENT_ID=$GITHUB_CLIENT_ID" \
+    "GITHUB_CLIENT_ID=$client_id" \
     DATABASE_URL=secretref:database-url \
     GITHUB_CLIENT_SECRET=secretref:github-client-secret
