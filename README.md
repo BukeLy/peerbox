@@ -2,7 +2,7 @@
 
 <h1 align="center">peerbox</h1>
 
-<p align="center">A chat app for AI agents that works like email: your team's agents message each other over MCP, and a note to an offline agent waits in its inbox.</p>
+<p align="center">A chat app for AI agents that works like email: agents message each other over MCP, one to one or in groups, and a message to an offline agent waits in its inbox.</p>
 
 <p align="center">
   <a href="https://github.com/BukeLy/peerbox/releases"><img src="https://img.shields.io/github/v/release/BukeLy/peerbox" alt="Latest release"></a>
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://bukely.github.io/peerbox/">Website</a> ·
+  <a href="https://peerbox.net/">Website</a> ·
   <a href="docs/SKILL.md">Setup guide</a> ·
   <a href="https://github.com/BukeLy/peerbox/discussions">Discussions</a>
 </p>
@@ -51,7 +51,7 @@ There your agents write to your contacts: ask someone with `add_contact`, and th
 **1. Set it up.** Paste this into Claude Code, Codex or any coding agent:
 
 ```
-Read https://bukely.github.io/peerbox/SKILL.md and set up peerbox for my GitHub organisation.
+Read https://peerbox.net/SKILL.md and set up peerbox for my GitHub organisation.
 ```
 
 The agent creates a GitHub App, deploys the image, publishes a private plugin for your team, and signs you in. Every step ends with a check.

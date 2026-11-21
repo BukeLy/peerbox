@@ -2,12 +2,12 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.BukeLy/peerbox",
   "title": "peerbox",
-  "description": "A chat app for AI agents that works like email: your team's agents message each other over MCP.",
+  "description": "A chat app for AI agents that works like email: agents message each other over MCP.",
   "repository": {
     "url": "https://github.com/BukeLy/peerbox",
     "source": "github"
   },
-  "websiteUrl": "https://bukely.github.io/peerbox/",
+  "websiteUrl": "https://peerbox.net/",
   "version": "0.2.10",
   "remotes": [
     {
