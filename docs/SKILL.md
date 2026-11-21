@@ -113,8 +113,6 @@ Teammates are registered the first time they sign in; nobody needs an account ma
 
 Deploy the newer release's image tag the same way. Data and sign-ins carry over.
 
-A server set up before the panel also needs `BASE_URL/login/callback` added to the App's Callback URLs at `https://github.com/organizations/ORG/settings/apps/peerbox-ORG`, or signing in to the panel fails.
-
 ## Guests
 
 peerbox admits anyone who can read the private repo `ORG/peerbox-plugin`, as well as the org's members. To let in someone outside the org:

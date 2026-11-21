@@ -5,6 +5,7 @@ import subprocess
 import threading
 import time
 from base64 import b64encode
+from contextlib import ExitStack
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -175,7 +176,10 @@ def github_token():
 
 async def test_active_org_member_is_admitted(github_token, monkeypatch):
     monkeypatch.setattr(mailbox, "GITHUB_ORG", os.environ["PEERBOX_TEST_ORG"])
-    token = AccessToken(token=github_token, client_id="test", scopes=[], claims={})
+    # The login only matters without GITHUB_ORG, which records its organisations.
+    token = AccessToken(
+        token=github_token, client_id="test", scopes=[], claims={"login": "member"}
+    )
     assert await admitted(AuthContext(token=token, component=None))
 
 
@@ -206,7 +210,22 @@ async def test_members_and_plugin_repo_guests_are_admitted(
         "AsyncClient",
         lambda **kwargs: client(transport=httpx2.MockTransport(github), **kwargs),
     )
-    assert await instance.admit(os.urandom(8).hex(), None) is admitted
+    assert await instance.admit(os.urandom(8).hex(), "turing") is admitted
+
+
+async def woken(change, expected: set[str], *bystanders: str) -> set[str]:
+    """Which of the expected people and the bystanders the change wakes, once the
+    expected ones woke. Client(server.mcp) must be open: its listener hears them."""
+    with ExitStack() as stack:
+        events = {
+            login: stack.enter_context(instance.waiters.watch(login))
+            for login in (*expected, *bystanders)
+        }
+        await change
+        for login in expected:
+            await asyncio.wait_for(events[login].wait(), timeout=5)
+        await asyncio.sleep(0.1)
+        return {login for login, event in events.items() if event.is_set()}
 
 
 async def test_a_change_wakes_only_the_people_it_involves(db):
@@ -239,35 +258,42 @@ async def test_groups_contacts_and_deleted_accounts_wake_whom_they_change(
     monkeypatch.setattr(
         httpx2, "AsyncClient", lambda **kwargs: client(transport=revoked, **kwargs)
     )
-    watch = instance.waiters.watch
-
-    async def woken(change, *expected) -> set[str]:
-        """Who of turing, church and kleene the change wakes."""
-        with watch("turing") as t, watch("church") as c, watch("kleene") as k:
-            await change
-            for login, event in [("turing", t), ("church", c), ("kleene", k)]:
-                if login in expected:
-                    await asyncio.wait_for(event.wait(), timeout=5)
-            await asyncio.sleep(0.1)
-            return {
-                login
-                for login, event in [("turing", t), ("church", c), ("kleene", k)]
-                if event.is_set()
-            }
-
-    async with Client(server.mcp):  # its listener hears the notifications
+    async with Client(server.mcp):
         both = {"turing", "church"}
-        assert (
-            await woken(invite(group, "turing/bot", token=turing, db=db), *both) == both
-        )
-        assert (
-            await woken(leave(group, "turing/bot", token=turing, db=db), *both) == both
-        )
-        assert await woken(remove_contact("church", token=turing, db=db), *both) == both
+        joined = invite(group, "turing/bot", token=turing, db=db)
+        assert await woken(joined, both, "kleene") == both
+        left = leave(group, "turing/bot", token=turing, db=db)
+        assert await woken(left, both, "kleene") == both
+        removed = remove_contact("church", token=turing, db=db)
+        assert await woken(removed, both, "kleene") == both
+        # Adding church back only lifts the block: here everyone is a contact.
+        added = add_contact("church", token=turing, db=db)
+        assert await woken(added, both, "kleene") == both
         # Here everyone is a contact, so kleene's panel listed church too.
         everyone = {"turing", "church", "kleene"}
-        deleted = delete_account(token=church, db=db)
-        assert await woken(deleted, *everyone) == everyone
+        assert await woken(delete_account(token=church, db=db), everyone) == everyone
+
+
+async def test_marking_a_copy_read_wakes_everyone_who_sees_its_state(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    await whoami(token=signed_in("post"), db=db)
+    group = (await create_group("compilers", token=turing, db=db))["group"]
+    await join(db, group, turing, "church", "kleene")
+    sent = await send(group, "standup at ten", token=turing, db=db)
+    async with Client(server.mcp):
+        read = mark_read([sent["id"]], token=church, db=db)
+        everyone = {"turing", "church", "kleene"}
+        assert await woken(read, everyone, "post") == everyone
+
+
+async def test_an_agents_first_inbox_read_wakes_its_owner(db):
+    turing = signed_in("turing")
+    await whoami(token=signed_in("church"), db=db)
+    async with Client(server.mcp):
+        registered = inbox(agent="bot", token=turing, db=db)
+        assert await woken(registered, {"turing"}, "church") == {"turing"}
+        checked_again = inbox(agent="bot", token=turing, db=db)
+        assert await woken(checked_again, set(), "turing") == set()
 
 
 @pytest.fixture
@@ -544,6 +570,18 @@ async def test_owner_address_hands_over_on_leaving(db):
     assert await db.fetchval("select count(*) from groups") == 0
 
 
+async def test_joining_a_group_everyone_left_makes_you_its_owner(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    await whoami(token=church, db=db)
+    group = (await create_group("compilers", token=turing, db=db))["group"]
+    await invite(group, "church", token=turing, db=db)
+    await leave(group, token=turing, db=db)
+    [invitation] = await requests_of(church, db)
+    await answer(invitation["id"], True, token=church, db=db)
+    [joined] = (await contacts(token=church, db=db))["groups"]
+    assert (joined["owner"], joined["members"]) == ("church", ["church"])
+
+
 async def test_an_emptied_group_keeps_its_messages_until_they_expire(db):
     turing, church = signed_in("turing"), signed_in("church")
     group = (await create_group("compilers", token=turing, db=db))["group"]
@@ -561,28 +599,6 @@ async def test_an_emptied_group_keeps_its_messages_until_they_expire(db):
     await db.execute("update messages set created_at = now() - interval '31 days'")
     await mailbox.expire(db)
     assert await db.fetchval("select count(*) from groups") == 0
-
-
-async def test_migration_numbers_old_messages_deliveries_with_their_ids(db):
-    await db.execute("insert into users (login) values ('turing'), ('church')")
-    # as written by a version without deliveries
-    old = await db.fetch(
-        "insert into messages (sender, recipient, recipient_agent, body, read_at) "
-        "values ('church', 'turing', null, 'unread', null), "
-        "('church', 'turing', 'bot', 'read', now()) returning id"
-    )
-    await db.execute(SCHEMA)
-    await db.execute(SCHEMA)
-
-    rows = await db.fetch(
-        "select id, message_id, read_at is not null from deliveries order by id"
-    )
-    assert [tuple(row) for row in rows] == [
-        (old[0]["id"], old[0]["id"], False),
-        (old[1]["id"], old[1]["id"], True),
-    ]
-    await send("turing", "new", token=signed_in("church"), db=db)
-    assert await texts(signed_in("turing"), db) == ["unread", "new"]
 
 
 async def test_events_come_from_deliveries(db, webhook):
@@ -815,12 +831,40 @@ async def test_deleting_an_account_deletes_its_data_and_hands_over_its_groups(
         "deleted": "turing",
         "signed_out": True,
     }
-    assert ("DELETE", "localhost", f"/peerbox/{key}") in calls
-    assert ("DELETE", "api.github.com", "/applications/test/grant") in calls
+    # The grant goes first, so a failing bucket can't leave it in place.
+    assert calls == [
+        ("DELETE", "api.github.com", "/applications/test/grant"),
+        ("DELETE", "localhost", f"/peerbox/{key}"),
+    ]
     [kept] = (await contacts(token=church, db=db))["groups"]
     assert (kept["owner"], kept["members"]) == ("church", ["church"])
     assert await db.fetchval("select count(*) from messages") == 0
     assert await people(church, db) == ["church"]
+
+
+async def test_deleting_an_account_wakes_who_saw_its_copies_in_groups_it_left(
+    db, monkeypatch, public
+):
+    # church shares an organisation with turing only: kleene and post are no
+    # contacts of church's.
+    await mailbox.record_memberships(db, "turing", ["lambda", "recursion"])
+    await mailbox.record_memberships(db, "church", ["lambda"])
+    for login in ("kleene", "post"):
+        await mailbox.record_memberships(db, login, ["recursion"])
+    turing, church = signed_in("turing"), signed_in("church")
+    group = (await create_group("logic", token=turing, db=db))["group"]
+    await join(db, group, turing, "church", "kleene", "post")
+    await send(group, "proof attached", token=signed_in("kleene"), db=db)
+    await leave(group, token=church, db=db)
+    revoked = httpx2.MockTransport(lambda request: httpx2.Response(204))
+    client = httpx2.AsyncClient
+    monkeypatch.setattr(
+        httpx2, "AsyncClient", lambda **kwargs: client(transport=revoked, **kwargs)
+    )
+    async with Client(server.mcp):
+        # kleene sent a copy church held; post and turing see that copy's state.
+        everyone = {"turing", "kleene", "post"}
+        assert await woken(delete_account(token=church, db=db), everyone) == everyone
 
 
 async def test_anyone_is_admitted_publicly_with_their_installed_organisations(
@@ -832,7 +876,7 @@ async def test_anyone_is_admitted_publicly_with_their_installed_organisations(
     second = "https://api.github.com/user/installations?per_page=100&page=2"
     pages = {
         None: ([org("acme"), {"account": {"login": "turing", "type": "User"}}], second),
-        "2": ([org("widgets"), org("gadgets")], None),
+        "2": ([org("widgets"), org("gadgets"), org("sso")], None),
     }
     states = {"acme": "active", "widgets": "active", "gadgets": "pending"}
 
@@ -843,8 +887,10 @@ async def test_anyone_is_admitted_publicly_with_their_installed_organisations(
             return httpx2.Response(
                 200, json={"installations": installations}, headers=links
             )
-        state = states[request.url.path.rsplit("/", 1)[-1]]
-        return httpx2.Response(200, json={"state": state})
+        name = request.url.path.rsplit("/", 1)[-1]
+        if name == "sso":  # enforces SAML, and the token has no session for it
+            return httpx2.Response(403, json={})
+        return httpx2.Response(200, json={"state": states[name]})
 
     client = httpx2.AsyncClient
     monkeypatch.setattr(
@@ -858,6 +904,20 @@ async def test_anyone_is_admitted_publicly_with_their_installed_organisations(
         "select org from memberships where login = 'turing' order by org"
     )
     assert [row["org"] for row in orgs] == ["acme", "widgets"]
+
+
+async def test_a_github_outage_keeps_the_recorded_organisations(
+    db, monkeypatch, public
+):
+    await mailbox.record_memberships(db, "turing", ["acme"])
+    down = httpx2.MockTransport(lambda request: httpx2.Response(503))
+    client = httpx2.AsyncClient
+    monkeypatch.setattr(
+        httpx2, "AsyncClient", lambda **kwargs: client(transport=down, **kwargs)
+    )
+    with pytest.raises(httpx2.HTTPStatusError):
+        await instance.admit(os.urandom(8).hex(), "turing")
+    assert await db.fetchval("select org from memberships") == "acme"
 
 
 @pytest.fixture
@@ -973,6 +1033,20 @@ async def test_an_upload_is_checked_when_sent(db):
         await send("turing", "again", attachments=[upload["id"]], token=church, db=db)
 
 
+async def test_an_attachment_another_send_claimed_meanwhile_is_refused(db, monkeypatch):
+    turing, church = signed_in("turing"), signed_in("church")
+    await whoami(token=turing, db=db)
+    upload = await attach(name="plan.txt", token=church, db=db)
+
+    async def checked_before_either_sent(db, owner, ids):
+        return [(upload["id"], 6)]
+
+    monkeypatch.setattr(mailbox, "_sendable", checked_before_either_sent)
+    await send("turing", "one", attachments=[upload["id"]], token=church, db=db)
+    with pytest.raises(ToolError, match="sent once"):
+        await send("turing", "two", attachments=[upload["id"]], token=church, db=db)
+
+
 async def test_only_public_https_urls_are_fetched(db):
     with pytest.raises(ToolError, match="non-public"):
         await attach(url="https://127.0.0.1/secret", token=signed_in("church"), db=db)
@@ -1017,8 +1091,7 @@ async def test_requests_wake_a_subscribed_webhook(db, webhook, public):
 
 
 def session(login: str) -> str:
-    key = instance.fernet("peerbox-panel-session")
-    return key.encrypt(login.encode()).decode()
+    return panel.SESSION_KEY.encrypt(login.encode()).decode()
 
 
 async def asgi(scope, receive, send):

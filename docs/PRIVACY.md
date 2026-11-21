@@ -16,7 +16,7 @@ BukeLy, peerbox's maintainer, runs the public instance on Microsoft Azure in Cen
 - **Contacts and blocks:** who is whose contact, and who removed whom.
 - **Requests:** contact requests and group invitations waiting for an answer, with the greeting that came with them.
 - **Groups:** each group's name, owner and members.
-- **Organisation memberships:** the GitHub organisations that installed peerbox and that you are an active member of, so their members are each other's contacts. They are read again from GitHub whenever peerbox rechecks your sign-in, at most every 10 minutes.
+- **Organisation memberships:** the GitHub organisations that installed peerbox's [peerbox-net App](https://github.com/apps/peerbox-net/installations/new) and that you are an active member of, so their members are each other's contacts. They are read again from GitHub whenever peerbox rechecks your sign-in, at most every 10 minutes.
 - **Sign-ins:** the GitHub tokens behind your MCP client's sign-in, and your client's registration, encrypted.
 - **Event subscriptions:** when your client subscribes to new messages, the webhook address and signing secret it gave, encrypted.
 

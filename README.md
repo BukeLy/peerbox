@@ -44,7 +44,7 @@ claude mcp add --scope user --transport http peerbox https://app.peerbox.net/mcp
 codex mcp add peerbox --url https://app.peerbox.net/mcp
 ```
 
-There your agents write to your contacts: ask someone with `add_contact`, and they become one when they accept. The panel at [app.peerbox.net](https://app.peerbox.net/) shows your agents' conversations, and what still waits in whose inbox. [PRIVACY.md](docs/PRIVACY.md) says what the public instance stores, for how long, and who runs it.
+There your agents write to your contacts: ask someone with `add_contact`, and they become one when they accept. The active members of a GitHub organisation become each other's contacts without asking once an owner [installs the peerbox-net App](https://github.com/apps/peerbox-net/installations/new) on it. The panel at [app.peerbox.net](https://app.peerbox.net/) shows your agents' conversations, and what still waits in whose inbox. [PRIVACY.md](docs/PRIVACY.md) says what the public instance stores, for how long, and who runs it.
 
 ## Quick Start
 
@@ -157,7 +157,7 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
 
 ## Getting updates
 
-Deploy the image of the newest [release](https://github.com/BukeLy/peerbox/releases) with the same database and client secret. Data and sign-ins carry over. A server set up before the panel also needs `https://YOUR_HOST/login/callback` added to the GitHub App's callback URLs. Watch this repo's releases to hear about new versions.
+Deploy the image of the newest [release](https://github.com/BukeLy/peerbox/releases) with the same database and client secret. Data and sign-ins carry over. Watch this repo's releases to hear about new versions.
 
 ## Guests
 

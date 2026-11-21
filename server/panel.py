@@ -104,7 +104,7 @@ def install(mcp) -> None:
                 "https://api.github.com/user",
                 headers={"Authorization": f"Bearer {token}"},
             )
-        login = user.json()["login"]
+        login = user.raise_for_status().json()["login"]
         if not await instance.admit(token, login):
             return Response(
                 f"{login} is not admitted to this peerbox.", status_code=403
@@ -149,7 +149,7 @@ def install(mcp) -> None:
             db,
             login,
             request.path_params["key"],
-            int(before) if before.isdigit() else None,
+            int(before) if before.isdecimal() else None,
         )
 
     async def stream(request: Request) -> Response:

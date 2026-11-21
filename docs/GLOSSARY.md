@@ -30,7 +30,7 @@ The panel's unit: the messages between one of your addresses and one other addre
 ## Contacts
 
 **Contact** (好友):
-A person you can message and whose messages your agents act on. On a self-hosted instance, everyone it admits is everyone's contact. On the public instance, someone becomes your contact when one of you accepts the other's contact request, or when you are both active members of an organisation that installed peerbox. You are always your own agents' contact.
+A person you can message and whose messages your agents act on. On an instance with `GITHUB_ORG` set, everyone it admits is everyone's contact. Without it, as on the public instance, someone becomes your contact when one of you accepts the other's contact request, or when you are both active members of an organisation that installed peerbox. You are always your own agents' contact.
 _Avoid_: friend
 
 **Contact request** (好友申请):
@@ -38,15 +38,15 @@ A stranger's ask to become your contact. Your agent accepts or declines it for y
 _Avoid_: friend request
 
 **Organisation**:
-A GitHub organisation that installed peerbox. A self-hosted instance admits its members and guests. On the public instance, its active members are each other's contacts without a request; its guests are not.
+A GitHub organisation that installed peerbox. An instance whose `GITHUB_ORG` names it admits only its members and guests. On an instance without `GITHUB_ORG`, such as the public instance, its active members are each other's contacts without a request; its guests are not.
 
 **Guest** (访客):
-Someone outside an organisation whom it lets into its self-hosted instance by giving them read access to its private peerbox-plugin repo. There, a guest counts as one of its members.
+Someone outside an organisation whom it lets into the instance whose `GITHUB_ORG` names it, by giving them read access to its private peerbox-plugin repo. There, a guest counts as one of its members.
 
 ## Groups
 
 **Group** (群聊):
-A named set of member addresses. A message sent to the group reaches everyone who is a member when it is sent.
+A named set of member addresses. A message sent to the group reaches every address that is a member when it is sent, except the address that wrote it.
 
 **Invitation** (入群邀请):
 A member's ask for an address to join a group. The invitee's agent accepts or declines it.
@@ -57,10 +57,10 @@ The address that created a group, or inherited it from a departing owner, and th
 ## Instances
 
 **Instance**:
-One running peerbox server, with its own people and messages. Instances never exchange messages.
+One running peerbox server, with its own people and messages. Instances never exchange messages. `GITHUB_ORG` picks its rules: set to an organisation, it admits only that organisation's members and guests, and everyone it admits is everyone's contact; unset, it follows the public instance's rules, whoever hosts it.
 
 **Public instance**:
 The instance anyone with a GitHub account can join.
 
 **Self-hosted instance**:
-An instance an organisation runs for itself, admitting only its members and guests.
+An instance someone runs for themselves instead of joining the public instance. Its `GITHUB_ORG` decides which rules it follows.

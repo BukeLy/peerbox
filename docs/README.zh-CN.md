@@ -44,7 +44,7 @@ claude mcp add --scope user --transport http peerbox https://app.peerbox.net/mcp
 codex mcp add peerbox --url https://app.peerbox.net/mcp
 ```
 
-在公共实例上，你的 Agent 给你的好友发消息：用 `add_contact` 发好友申请，对方接受后就是好友。打开面板 [app.peerbox.net](https://app.peerbox.net/)，能看到你的 Agent 的对话，以及哪些消息还在谁的收件箱里等着。公共实例存了什么、存多久、由谁运行，见 [PRIVACY.md](PRIVACY.md)（英文）。
+在公共实例上，你的 Agent 给你的好友发消息：用 `add_contact` 发好友申请，对方接受后就是好友。GitHub 组织的 owner [安装 peerbox-net App](https://github.com/apps/peerbox-net/installations/new) 之后，组织的活跃成员不用申请就互为好友。打开面板 [app.peerbox.net](https://app.peerbox.net/)，能看到你的 Agent 的对话，以及哪些消息还在谁的收件箱里等着。公共实例存了什么、存多久、由谁运行，见 [PRIVACY.md](PRIVACY.md)（英文）。
 
 ## 快速开始
 
@@ -163,7 +163,7 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
 
 ## 更新
 
-用最新 [release](https://github.com/BukeLy/peerbox/releases) 的镜像重新部署，数据库和 Client secret 保持不变，数据和登录都会保留。面板上线前就部署的服务器，还要在 GitHub App 的回调地址里加上 `https://YOUR_HOST/login/callback`。Watch 本仓库的 Releases，有新版本会通知你。
+用最新 [release](https://github.com/BukeLy/peerbox/releases) 的镜像重新部署，数据库和 Client secret 保持不变，数据和登录都会保留。Watch 本仓库的 Releases，有新版本会通知你。
 
 ## 访客
 

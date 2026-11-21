@@ -102,7 +102,7 @@ DESTRUCTIVE = ToolAnnotations(destructive_hint=True, open_world_hint=False)
 async def admitted(ctx: AuthContext) -> bool:
     """AuthMiddleware's check: a signed-in caller this instance admits."""
     return ctx.token is not None and await instance.admit(
-        ctx.token.token, ctx.token.claims.get("login")
+        ctx.token.token, ctx.token.claims["login"]
     )
 
 
@@ -424,8 +424,10 @@ async def delete_account(
     account.
     """
     login = (await me(db, token)).login
+    # Before the bucket's deletes, so one of them failing can't skip it.
+    signed_out = await revoke_grant(token.token)
     await mailbox.delete_account(db, login)
-    return {"deleted": login, "signed_out": await revoke_grant(token.token)}
+    return {"deleted": login, "signed_out": signed_out}
 
 
 class ChatGPTFile(BaseModel):
@@ -667,11 +669,9 @@ SUBSCRIPTION_KEY = instance.fernet("peerbox-event-subscriptions")
 
 async def save(subscription: Subscription) -> None:
     """Store the subscription so a restarted server resumes its deliveries."""
-    async with instance.pool.acquire() as db:
-        await db.execute(
-            "insert into event_subscriptions (id, expires_at, state) "
-            "values ($1, $2, $3) on conflict (id) do update "
-            "set expires_at = excluded.expires_at, state = excluded.state",
+    async with instance.get_db() as db:
+        await mailbox.save_subscription(
+            db,
             subscription.id,
             subscription.expires_at,
             SUBSCRIPTION_KEY.encrypt(subscription.model_dump_json().encode()),
@@ -680,9 +680,7 @@ async def save(subscription: Subscription) -> None:
 
 async def events_principal() -> str:
     token = get_access_token()
-    if token is None or not await instance.admit(
-        token.token, token.claims.get("login")
-    ):
+    if token is None or not await instance.admit(token.token, token.claims["login"]):
         raise MCPError(FORBIDDEN, "Only people this peerbox admits can subscribe")
     return token.claims["login"]
 
@@ -868,17 +866,13 @@ class MessageEvents(ServerExtension):
 
     @asynccontextmanager
     async def lifespan(self):
-        async with instance.pool.acquire() as db:
-            rows = await db.fetch(
-                "select state from event_subscriptions where expires_at > now()"
-            )
-        for row in rows:
+        async with instance.get_db() as db:
+            states = await mailbox.subscriptions(db)
+        for state in states:
             # A rotated GITHUB_CLIENT_SECRET drops the row; the client resubscribes.
             with suppress(InvalidToken):
                 self.start(
-                    Subscription.model_validate_json(
-                        SUBSCRIPTION_KEY.decrypt(row["state"])
-                    )
+                    Subscription.model_validate_json(SUBSCRIPTION_KEY.decrypt(state))
                 )
         yield
         for pump in self.pumps.values():
@@ -952,7 +946,7 @@ class MessageEvents(ServerExtension):
                 cursor=str(subscription.position),
                 truncated=False,
             )
-        async with instance.pool.acquire() as db:
+        async with instance.get_db() as db:
             position, truncated = await mailbox.start_position(
                 db,
                 None if params.cursor is None else int(params.cursor),
@@ -1011,7 +1005,7 @@ class MessageEvents(ServerExtension):
                 while datetime.now(UTC) < subscription.expires_at:
                     woken.clear()
                     try:
-                        async with instance.pool.acquire() as db:
+                        async with instance.get_db() as db:
                             events = await mailbox.waiting(
                                 db, reader, subscription.position
                             )

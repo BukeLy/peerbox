@@ -65,34 +65,58 @@
   const agentOf = (a) => a.split("/")[1];
   const mine = (a) => kind(a) !== "group" && owner(a) === data.me;
   // label: you as "You", your agents by name, a group by its name, anyone else by their address.
-  // detail: the line under a member's address. noun: what the details pane calls it.
+  // addr: the label as an address; another person's agent keeps its owner, quiet. detail: the line under a member's address.
+  // noun: the line under the details pane's title. facts: the details pane's lines about it.
+  // subtitle: the line under the conversation's title. where: how a sentence names the conversation, around a link to it.
+  // in: what an announcement of a new message adds after its sender.
+  const named = (a) => `<span class="addr">${esc(label(a))}</span>`;
+  const direct = { where: (link) => `your conversation with ${link}`, in: () => "" };
   const KIND = {
     person: {
       glyph: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3.2 13.5c.6-2.5 2.5-3.9 4.8-3.9s4.2 1.4 4.8 3.9"/>',
       label: (a) => (a === data.me ? "You" : a),
+      addr: named,
       detail: (a) => data.people[a]?.name ?? "Person",
       noun: () => "Person",
+      facts: (a, c) => `<p class="kv"><span>Name</span><span>${esc(data.people[a]?.name ?? "—")}</span></p>${members("Your side", c?.sides ?? [], a)}`,
       subtitle: (a) => (a === data.me ? "You" : data.people[a]?.name ?? "Person"),
+      ...direct,
     },
     agent: {
       glyph: '<rect x="2.5" y="4.5" width="11" height="9" rx="3"/><path d="M6 8.3v1.4M10 8.3v1.4M8 4.5V2.3"/>',
       label: (a) => (mine(a) ? agentOf(a) : a),
+      addr: (a) => (mine(a) ? named(a) : `<span class="addr"><span class="owner">${esc(owner(a))}/</span>${esc(agentOf(a))}</span>`),
       detail: (a) => checked(a),
       noun: (a) => (mine(a) ? "Your agent" : "Agent"),
+      facts: (a, c) => {
+        const does = data.agents[a]?.description;
+        const person = data.people[owner(a)];
+        return `${does ? `<p class="kv"><span>Does</span><span>${esc(does)}</span></p>` : ""}
+          <p class="kv"><span>Acts for</span><span>${esc(person?.name ? `${person.name} (${owner(a)})` : owner(a))}</span></p>
+          <p class="kv"><span>Inbox</span><span>${esc(checked(a))}</span></p>${members("Your side", c?.sides ?? [], a)}`;
+      },
       subtitle: (a) => [mine(a) ? "Your agent" : `${owner(a)}'s agent`, data.agents[a]?.description, data.agents[a] && checked(a).toLowerCase()].filter(Boolean).join(" · "),
+      ...direct,
     },
     group: {
       glyph: '<path d="M6.3 2.5 5 13.5M11 2.5 9.7 13.5M2.8 6h10.7M2.5 10h10.7"/>',
       label: (a) => data.groups[a]?.name ?? a,
-      noun: () => "Group",
+      addr: named,
+      noun: (a) => (data.groups[a] ? a : "Group"),
+      facts: (a) => {
+        const g = data.groups[a];
+        return g
+          ? `<p class="kv"><span>Owner</span><span class="addr">${esc(g.owner)}</span></p>${members(`${g.members.length} members`, g.members, a)}`
+          : `<p class="kv"><span>Membership</span><span>You left this group</span></p>`;
+      },
       subtitle: (a) => { const g = data.groups[a]; return g ? `${g.members.length} members · owner ${g.owner}` : "You are no longer in this group"; },
+      where: (link) => link,
+      in: (a) => ` in ${label(a)}`,
     },
   };
   const about = (a) => KIND[kind(a)];
   const label = (a) => about(a).label(a);
-  const addr = (a) => (kind(a) === "agent" && !mine(a)
-    ? `<span class="addr"><span class="owner">${esc(owner(a))}/</span>${esc(agentOf(a))}</span>`
-    : `<span class="addr">${esc(label(a))}</span>`);
+  const addr = (a) => about(a).addr(a);
   const glyph = (a) => `<svg class="kind" viewBox="0 0 16 16" aria-hidden="true">${about(a).glyph}</svg>`;
   const disc = (a) => `<span class="disc" aria-hidden="true">${glyph(a)}</span>`;
 
@@ -172,9 +196,9 @@
     const waits = Object.values(data.waiting).reduce((n, c) => n + c, 0);
     // the count leads to its cause: a link to the conversation that holds the oldest waiting message
     const oldest = data.convs.filter((c) => c.waiting_since).sort((a, b) => new Date(a.waiting_since) - new Date(b.waiting_since))[0];
-    const where = oldest && `<a href="${href(oldest.key)}">${esc(label(oldest.key))}</a>`;
+    const link = oldest && `<a href="${href(oldest.key)}">${esc(label(oldest.key))}</a>`;
     $(".finding").innerHTML = waits && oldest
-      ? `<b>${waits === 1 ? "1 message waits" : `${waits} messages wait`}</b> in your inboxes. ${waits === 1 ? "It" : "The oldest"} has waited ${esc(since(new Date(oldest.waiting_since)))}, in ${kind(oldest.key) === "group" ? where : `your conversation with ${where}`}.`
+      ? `<b>${waits === 1 ? "1 message waits" : `${waits} messages wait`}</b> in your inboxes. ${waits === 1 ? "It" : "The oldest"} has waited ${esc(since(new Date(oldest.waiting_since)))}, in ${about(oldest.key).where(link)}.`
       : data.convs.length ? "Nothing waits in your inboxes." : "No conversations in the last 30 days.";
     const inboxes = [data.me, ...Object.keys(data.agents).filter(mine)];
     $(".inboxes").innerHTML = inboxes.map((a) => {
@@ -294,6 +318,9 @@
   };
 
   // --- the inspector -----------------------------------------------------------------------------------------
+  // the addresses in conversation k, under a heading; a group's owner is tagged
+  const members = (heading, list, k) => `<h3>${heading}</h3>${list.map((a) => `
+    <p class="member">${glyph(a)}<span>${addr(a)}<span class="sub">${esc(about(a).detail(a))}</span></span>${a === data.groups[k]?.owner ? '<span class="tag">Owner</span>' : ""}</p>`).join("")}`;
   const renderInfo = () => {
     const info = $("#info");
     const conversation = data.open;
@@ -303,32 +330,16 @@
     if (!show) return;
     const k = conversation.key;
     const c = data.convs.find((x) => x.key === k);
-    const head = (title, sub) => `
+    info.innerHTML = `
       <div class="info-head">
         <a class="icon-btn back" href="${href(k)}" aria-label="Back to the conversation"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6"/></svg></a>
-        ${disc(k)}<div><${titleTag()} class="title" id="info-title" tabindex="-1">${title}</${titleTag()}><p>${esc(sub)}</p></div>
+        ${disc(k)}<div><${titleTag()} class="title" id="info-title" tabindex="-1">${addr(k)}</${titleTag()}><p>${esc(about(k).noun(k))}</p></div>
         <a class="icon-btn info-close" href="${href(k)}" aria-label="Close details"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9m0-9-9 9"/></svg></a>
-      </div>`;
-    const who = (a) => `<p class="member">${glyph(a)}<span>${addr(a)}<span class="sub">${esc(about(a).detail(a))}</span></span>${kind(k) === "group" && a === data.groups[k]?.owner ? '<span class="tag">Owner</span>' : ""}</p>`;
-    const counts = `<h3>Last 30 days</h3>
+      </div>
+      ${about(k).facts(k, c)}
+      <h3>Last 30 days</h3>
       <p class="kv"><span>Messages</span><span>${conversation.messages.length}${conversation.has_more ? "+" : ""}</span></p>
       <p class="kv"><span>Waiting in your inboxes</span><span>${c?.waiting ?? 0}</span></p>`;
-    if (kind(k) === "group") {
-      const g = data.groups[k];
-      info.innerHTML = g
-        ? `${head(esc(g.name), k)}
-          <p class="kv"><span>Owner</span><span class="addr">${esc(g.owner)}</span></p>
-          <h3>${g.members.length} members</h3>${g.members.map(who).join("")}${counts}`
-        : `${head(esc(k), about(k).noun(k))}<p class="kv"><span>Membership</span><span>You left this group</span></p>${counts}`;
-    } else {
-      const a = data.agents[k];
-      const person = data.people[owner(k)];
-      info.innerHTML = `${head(addr(k), about(k).noun(k))}
-        ${a?.description ? `<p class="kv"><span>Does</span><span>${esc(a.description)}</span></p>` : ""}
-        ${kind(k) === "agent" ? `<p class="kv"><span>Acts for</span><span>${esc(person?.name ? `${person.name} (${owner(k)})` : owner(k))}</span></p>
-        <p class="kv"><span>Inbox</span><span>${esc(checked(k))}</span></p>` : `<p class="kv"><span>Name</span><span>${esc(person?.name ?? "—")}</span></p>`}
-        <h3>Your side</h3>${(c?.sides ?? []).map(who).join("")}${counts}`;
-    }
   };
 
   // --- the whole screen ------------------------------------------------------------------------------------------
@@ -490,7 +501,7 @@
       const before = data.convs[0]?.last.sent_at;
       await refresh();
       const newest = data.convs[0];
-      if (newest && newest.last.sent_at !== before) $("#announce").textContent = `New message from ${label(newest.last.from)}${kind(newest.key) === "group" ? ` in ${label(newest.key)}` : ""}`;
+      if (newest && newest.last.sent_at !== before) $("#announce").textContent = `New message from ${label(newest.last.from)}${about(newest.key).in(newest.key)}`;
     });
   });
 })();

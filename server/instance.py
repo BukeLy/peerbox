@@ -7,7 +7,7 @@ import os
 import time
 from base64 import urlsafe_b64encode
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractAsyncContextManager, contextmanager
 from hashlib import sha256
 from pathlib import Path
 
@@ -30,6 +30,11 @@ GITHUB_CLIENT_SECRET = os.environ["GITHUB_CLIENT_SECRET"]
 ADMISSION_SECONDS = 600
 
 pool: Pool  # opened by the database lifespan
+
+
+def get_db() -> AbstractAsyncContextManager[Connection]:
+    """A connection from the pool, for `async with` or a tool's Depends."""
+    return pool.acquire()
 
 
 class Waiters:
@@ -73,10 +78,10 @@ def fernet(purpose: str) -> Fernet:
     )
 
 
-async def expire_hourly() -> None:
+async def _expire_hourly() -> None:
     while True:
         try:
-            async with pool.acquire() as db:
+            async with get_db() as db:
                 await mailbox.expire(db)
         except Exception:
             logger.exception("Deleting old messages failed")
@@ -89,18 +94,18 @@ async def database(server):
     # At most 7 connections an instance: 4 here, the listener and the OAuth store's 2,
     # so the server fits small Postgres plans.
     async with create_pool(DATABASE_URL, min_size=1, max_size=4) as pool:
-        async with pool.acquire() as db:
+        async with get_db() as db:
             version = db.get_server_version()
         if version.major < 15:  # schema.sql uses `unique nulls not distinct`
             raise RuntimeError(
                 f"peerbox needs Postgres 15 or newer (found {version.major}."
                 f"{version.minor})"
             )
-        # Every statement is idempotent, so an empty or older database is brought
-        # up to date here.
+        # Every statement is idempotent, so it runs on every start and creates
+        # what an empty database lacks.
         await pool.execute((HERE / "schema.sql").read_text())
         listener = await connect(DATABASE_URL)
-        expiry = asyncio.create_task(expire_hourly())
+        expiry = asyncio.create_task(_expire_hourly())
         try:
             await listener.add_listener(mailbox.CHANNEL, waiters.wake)
             yield {}
@@ -109,19 +114,16 @@ async def database(server):
             await listener.close()
 
 
-def get_db() -> Connection:
-    return pool.acquire()
-
-
 _admitted_until: dict[str, float] = {}  # a token's hash: when it is rechecked
 
 
-async def admit(token: str, login: str | None) -> bool:
+async def admit(token: str, login: str) -> bool:
     """Whether this instance admits the holder of this GitHub token, rechecked every
-    10 minutes. A self-hosted instance admits its organisation's active members and
-    its guests. The public instance admits anyone, and each check records the
+    10 minutes. With GITHUB_ORG set, it admits that organisation's active members
+    and its guests. Without it, it admits anyone, and each check records the
     organisations that installed peerbox where login is an active member, since
-    their members are each other's contacts."""
+    their members are each other's contacts; a GitHub failure there raises rather
+    than recording none."""
     key = sha256(token.encode()).hexdigest()
     if _admitted_until.get(key, 0) > time.monotonic():
         return True
@@ -140,7 +142,7 @@ async def admit(token: str, login: str | None) -> bool:
             admitted = await _member_or_guest(github, mailbox.GITHUB_ORG)
     if admitted:
         now = time.monotonic()
-        for stale in [key for key, until in _admitted_until.items() if until <= now]:
+        for stale in [held for held, until in _admitted_until.items() if until <= now]:
             del _admitted_until[stale]
         _admitted_until[key] = now + ADMISSION_SECONDS
     return admitted
@@ -160,15 +162,19 @@ async def _record_organisations(github: httpx2.AsyncClient, login: str) -> None:
     orgs = []
     page = "/user/installations?per_page=100"
     while page:
-        installed = await github.get(page)
+        installed = (await github.get(page)).raise_for_status()
         for installation in installed.json().get("installations", []):
             account = installation["account"]
             if account["type"] == "Organization":
                 membership = await github.get(
                     f"/user/memberships/orgs/{account['login']}"
                 )
-                if membership.json().get("state") == "active":
+                # 404: not a member. 403: the org enforces SAML and this token has
+                # no session for it. Neither counts; any other failure raises.
+                if membership.status_code in (403, 404):
+                    continue
+                if membership.raise_for_status().json().get("state") == "active":
                     orgs.append(account["login"])
         page = installed.links.get("next", {}).get("url")
-    async with pool.acquire() as db:
+    async with get_db() as db:
         await mailbox.record_memberships(db, login, orgs)
