@@ -87,13 +87,16 @@
 #
 # The release's deploy job signs in to Azure through GitHub OIDC as this repo's
 # production environment, as an identity that may change only the container app.
-# No Azure secret is stored in GitHub; the environment's variables hold its IDs:
+# No Azure secret is stored in GitHub; the environment's variables hold its IDs.
+# GitHub's token names the owner and the repo with their IDs too
+# (gh api users/BukeLy -q .id; gh api repos/BukeLy/peerbox -q .id), so a repo
+# recreated under the same name can't pass for this one:
 #
 #   app=$(az ad app create --display-name peerbox-deploy --query appId --output tsv)
 #   az ad sp create --id "$app"
 #   az ad app federated-credential create --id "$app" --parameters '{"name":
 #     "github-production", "issuer": "https://token.actions.githubusercontent.com",
-#     "subject": "repo:BukeLy/peerbox:environment:production",
+#     "subject": "repo:BukeLy@19304666/peerbox@1463640876:environment:production",
 #     "audiences": ["api://AzureADTokenExchange"]}'
 #   az role assignment create --assignee "$app" --role Contributor --scope \
 #     "$(az containerapp show --resource-group peerbox --name peerbox --query id \
