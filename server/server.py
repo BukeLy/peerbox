@@ -68,6 +68,13 @@ Group = Annotated[
     Field(pattern=r"^#[0-9a-f]+$", description='A group, "#" and its id ("#3fa9c1d2")'),
 ]
 AgentName = Annotated[str, Field(pattern=rf"^{AGENT}$")]
+FromAgent = Annotated[
+    AgentName | None,
+    Field(
+        description="One of your own agents to write as, so answers reach it; it must "
+        "have read its inbox once. Leave it out to write as yourself."
+    ),
+]
 Alias = Annotated[str, Field(min_length=1, max_length=40)]
 IN_A_GROUP = (
     "In a group (a message whose `to` is a #id), answer only what asks you, and send "
@@ -192,7 +199,14 @@ async def whoami(
 
 @mcp.tool(annotations=IDEMPOTENT_WRITE)
 async def set_aliases(
-    aliases: Annotated[list[Alias], Field(max_length=10)],
+    aliases: Annotated[
+        list[Alias],
+        Field(
+            max_length=10,
+            description='The names your contacts may call you, such as "Prof" or '
+            '"Alan"',
+        ),
+    ],
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
@@ -222,24 +236,33 @@ async def contacts(
 
 @mcp.tool(annotations=WRITE)
 async def send(
-    to: DirectAddress | Group,
-    text: Annotated[str, Field(min_length=1, max_length=4000)],
-    reply_to: int | None = None,
-    from_agent: AgentName | None = None,
-    attachments: list[int] | None = None,
+    to: Annotated[
+        DirectAddress | Group,
+        Field(
+            description='A login from contacts ("turing"), "login/agent" for one of '
+            'their agents ("turing/review-bot"), or a group\'s "#id". Never guess '
+            "an address."
+        ),
+    ],
+    text: Annotated[
+        str, Field(min_length=1, max_length=4000, description="The message")
+    ],
+    reply_to: Annotated[
+        int | None, Field(description="The id of the message you answer")
+    ] = None,
+    from_agent: FromAgent = None,
+    attachments: Annotated[
+        list[int] | None, Field(description="Ids from attach, to send those files")
+    ] = None,
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
     """Send a message to a contact, to one of their agents, or to a group you are in.
 
-    `to` is a login from contacts ("turing"), "login/agent" for a specific agent
-    ("turing/review-bot"), or a group's "#id". Never guess an address. A
-    message to an agent waits in its inbox until the agent next reads it. A
-    message to a group reaches every member but the address you write from. When
-    you write as one of your own agents, name it in `from_agent` so replies
-    reach that agent; it must have read its inbox at least once. To answer a
-    message, send to its `from` address, or to its `to` if that is a group, with
-    `reply_to` set to its id. `attachments` takes ids from attach.
+    A message to an agent waits in its inbox until the agent next reads it. A
+    message to a group reaches every member but the address you write from. To
+    answer a message, send to its `from` address, or to its `to` if that is a
+    group, with `reply_to` set to its id.
     """
     you = await me(db, token, from_agent)
     return await mailbox.send(
@@ -249,16 +272,23 @@ async def send(
 
 @mcp.tool(annotations=READ)
 async def inbox(
-    agent: AgentName | None = None,
-    limit: Annotated[int, Field(ge=1, le=100)] = 20,
+    agent: Annotated[
+        AgentName | None,
+        Field(
+            description="One of your own agents, to read its inbox instead of yours. "
+            "Reading it lists the agent in contacts, so others can write to it."
+        ),
+    ] = None,
+    limit: Annotated[
+        int, Field(ge=1, le=100, description="The most messages to return")
+    ] = 20,
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
     """Read your unread messages and the requests waiting for your answer, or
     those addressed to one of your agents.
 
-    Reading an agent's inbox lists that agent in contacts so others can write
-    to it. A message to a group has the group's "#id" as its `to`. An
+    A message to a group has the group's "#id" as its `to`. An
     attachment's `url` downloads it until its `url_expires_at`; open_attachment
     shows it to you. Reading does not mark messages read: call mark_read with
     their ids, and the same agent you read as, once you have handled them.
@@ -269,15 +299,21 @@ async def inbox(
 
 @mcp.tool(annotations=IDEMPOTENT_WRITE)
 async def mark_read(
-    ids: list[int],
-    agent: AgentName | None = None,
+    ids: Annotated[list[int], Field(description="The ids of the messages you handled")],
+    agent: Annotated[
+        AgentName | None,
+        Field(
+            description="The agent you read them as. Leave it out for the messages "
+            "you read as yourself."
+        ),
+    ] = None,
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
     """Mark messages as read once you have handled them.
 
-    Each copy of a message belongs to one address: pass the agent you read them
-    as, and only its copies are marked; without `agent`, only your own are.
+    Each copy of a message belongs to one address, so only the copies of the
+    address you read them as are marked.
     """
     you = await me(db, token, agent)
     return {"marked_read": await mailbox.mark_read(db, you, ids)}
@@ -285,17 +321,18 @@ async def mark_read(
 
 @mcp.tool(annotations=WRITE)
 async def create_group(
-    name: Annotated[str, Field(min_length=1, max_length=100)],
-    from_agent: AgentName | None = None,
+    name: Annotated[
+        str, Field(min_length=1, max_length=100, description='Its name ("release-1.8")')
+    ],
+    from_agent: FromAgent = None,
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
     """Create a group, owned by the address you write from, which is its first
     member.
 
-    When you write as one of your own agents, name it in `from_agent`. Send to
-    the group's "#id" to reach every member at once. Add your other agents with
-    invite.
+    Send to the group's "#id" to reach every member at once. Add your other
+    agents with invite.
     """
     you = await me(db, token, from_agent)
     return {"group": str(await mailbox.create_group(db, you, name))}
@@ -305,15 +342,12 @@ async def create_group(
 async def invite(
     group: Group,
     address: DirectAddress,
-    from_agent: AgentName | None = None,
+    from_agent: FromAgent = None,
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
     """Add an address to a group you are in: one of your own joins at once; a
-    contact's is invited and joins when they accept.
-
-    When you write as one of your own agents, name it in `from_agent`.
-    """
+    contact's is invited and joins when they accept."""
     you = await me(db, token, from_agent)
     status = await mailbox.invite(
         db, you, mailbox.Address.parse(group), mailbox.Address.parse(address)
@@ -324,15 +358,21 @@ async def invite(
 @mcp.tool(annotations=DESTRUCTIVE)
 async def leave(
     group: Group,
-    address: DirectAddress | None = None,
-    from_agent: AgentName | None = None,
+    address: Annotated[
+        DirectAddress | None,
+        Field(
+            description='The address to remove: a login ("turing") or "login/agent" '
+            '("turing/review-bot"). Leave it out to leave as the address you write '
+            "from."
+        ),
+    ] = None,
+    from_agent: FromAgent = None,
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
     """Leave a group, or remove an address from it.
 
-    When you write as one of your own agents, name it in `from_agent`; without
-    `address`, that address leaves. You can remove any of your own addresses,
+    You can remove any of your own addresses,
     and the group's owner can also remove other people's. When the owner
     leaves, the member that joined first becomes owner. A group nobody is left in
     is deleted once its messages are, 30 days after they were sent.
@@ -345,9 +385,14 @@ async def leave(
 
 @mcp.tool(annotations=WRITE)
 async def add_contact(
-    login: Annotated[str, Field(pattern=r"^[A-Za-z0-9-]+$")],
-    greeting: Annotated[str, Field(max_length=500)] | None = None,
-    from_agent: AgentName | None = None,
+    login: Annotated[
+        str,
+        Field(pattern=r"^[A-Za-z0-9-]+$", description='Their GitHub login ("turing")'),
+    ],
+    greeting: Annotated[
+        str | None, Field(max_length=500, description="Tells them who you are")
+    ] = None,
+    from_agent: FromAgent = None,
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
@@ -355,8 +400,7 @@ async def add_contact(
     other. Ask your user first.
 
     They become your contact when they accept, or at once if they already asked
-    you. Adding someone you removed lets them write to you again. `greeting`
-    tells them who you are.
+    you. Adding someone you removed lets them write to you again.
     """
     you = await me(db, token, from_agent)
     status = await mailbox.add_contact(db, you, login, greeting)
@@ -365,9 +409,13 @@ async def add_contact(
 
 @mcp.tool(annotations=WRITE)
 async def answer(
-    request_id: int,
-    accept: bool,
-    from_agent: AgentName | None = None,
+    request_id: Annotated[
+        int, Field(description="The request's id, from inbox's requests")
+    ],
+    accept: Annotated[
+        bool, Field(description="true to accept; false to decline and delete it")
+    ],
+    from_agent: FromAgent = None,
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
@@ -375,8 +423,8 @@ async def answer(
     user first.
 
     Accepting a contact request lets you and them write to each other; accepting
-    an invitation joins the invited address to the group. Declining deletes the
-    request. A contact request shows in all your inboxes, and the first answer
+    an invitation joins the invited address to the group. A contact request
+    shows in all your inboxes, and the first answer
     from any of them settles it.
     """
     you = await me(db, token, from_agent)
@@ -386,7 +434,13 @@ async def answer(
 
 @mcp.tool(annotations=DESTRUCTIVE)
 async def remove_contact(
-    login: Annotated[str, Field(pattern=r"^[A-Za-z0-9-]+$")],
+    login: Annotated[
+        str,
+        Field(
+            pattern=r"^[A-Za-z0-9-]+$",
+            description='The contact\'s GitHub login ("turing")',
+        ),
+    ],
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
@@ -441,22 +495,37 @@ class ChatGPTFile(BaseModel):
 
 @mcp.tool(annotations=WRITE, meta={"openai/fileParams": ["file"]})
 async def attach(
-    file: ChatGPTFile | None = None,
-    url: Annotated[str, Field(pattern=r"^https://[^/?#@]+")] | None = None,
-    name: Annotated[str, Field(min_length=1)] | None = None,
-    mime: str | None = None,
-    from_agent: AgentName | None = None,
+    file: Annotated[
+        ChatGPTFile | None, Field(description="A file your user shared with you")
+    ] = None,
+    url: Annotated[
+        str | None,
+        Field(
+            pattern=r"^https://[^/?#@]+",
+            description="A public https URL for peerbox to fetch the file from",
+        ),
+    ] = None,
+    name: Annotated[
+        str | None,
+        Field(
+            min_length=1, description="The file's name, if the source doesn't give it"
+        ),
+    ] = None,
+    mime: Annotated[
+        str | None,
+        Field(
+            description="The file's type (\"image/png\"), if the source doesn't give it"
+        ),
+    ] = None,
+    from_agent: FromAgent = None,
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
     """Prepare a file of up to 10 MB to send: pass the returned id in send's
     `attachments`.
 
-    Give the file your user shared (`file`), a public https `url` for peerbox to
-    fetch, or neither to get an `upload_url` and upload the file yourself before
-    its `upload_url_expires_at`: `curl -T <path> '<upload_url>'`. Name the file
-    with `name`, and its type with `mime`, when they can't be told from the
-    source.
+    Give `file` or `url`, or neither to get an `upload_url` and upload the file
+    yourself before its `upload_url_expires_at`: `curl -T <path> '<upload_url>'`.
     """
     you = await me(db, token, from_agent)
 
@@ -491,7 +560,10 @@ SHOWN_AS_IMAGES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 @mcp.tool(annotations=READ)
 async def open_attachment(
-    id: int,
+    id: Annotated[
+        int,
+        Field(description="An attachment's id, from a message you sent or received"),
+    ],
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> Image | EmbeddedResource:
