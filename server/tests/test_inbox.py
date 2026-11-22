@@ -1163,8 +1163,13 @@ def test_anyone_sees_what_peerbox_offers_and_signs_in_to_use_it():
         listed = result(rpc(page, "tools/list"))["tools"]
         tools = {tool["name"] for tool in listed}
         assert {"whoami", "send", "inbox", "create_group", "attach"} <= tools
-        # Optional arguments are left out, so no schema spends tokens on a null branch.
-        assert '"null"' not in json.dumps([tool["inputSchema"] for tool in listed])
+        # Optional arguments are left out and nothing is said twice, so no schema
+        # spends tokens on a null branch, a null default or a repeated description.
+        schemas = json.dumps([tool["inputSchema"] for tool in listed])
+        assert '"null"' not in schemas and '"default": null' not in schemas
+        to = next(t for t in listed if t["name"] == "send")["inputSchema"]
+        to = to["properties"]["to"]
+        assert to["description"] and not any("description" in b for b in to["anyOf"])
         call = {"name": "whoami", "arguments": {}}
         for refused in (
             rpc(page, "tools/call", call),
