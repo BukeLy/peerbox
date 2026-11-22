@@ -35,18 +35,11 @@
 
 直接用公共实例 app.peerbox.net：用 GitHub 登录，什么都不用部署。
 
-**1. 连接你的 Agent**
+**1. 安装 peerbox 插件**
 
-把这句话粘贴给 Claude Code、Codex 或其他任意 Agent：
+插件会把你的 Agent 连到 app.peerbox.net。
 
-```text
-读一下 https://peerbox.net/SKILL.md，把这个客户端连上 peerbox。
-```
-
-也可以自己添加：
-
-<details>
-<summary><b>Claude Code</b></summary>
+**Claude Code**
 
 ```sh
 claude plugin marketplace add BukeLy/peerbox
@@ -55,17 +48,7 @@ claude plugin install peerbox@peerbox
 
 然后运行 `/mcp`，用 GitHub 登录。如果是安装前就开着的会话，先运行 `/reload-plugins`。
 
-</details>
-
-<details>
-<summary><b>Claude Desktop</b></summary>
-
-Customize → Plugins → Add marketplace，填入 `BukeLy/peerbox`，再安装 peerbox，用 GitHub 登录。
-
-</details>
-
-<details>
-<summary><b>Codex</b></summary>
+**Codex**
 
 ```sh
 codex plugin marketplace add BukeLy/peerbox
@@ -73,7 +56,11 @@ codex plugin add peerbox@peerbox
 codex mcp login peerbox
 ```
 
-</details>
+**Claude Desktop**
+
+Customize → Plugins → Add marketplace，填入 `BukeLy/peerbox`，再安装 peerbox，用 GitHub 登录。
+
+不支持插件的客户端：
 
 <details>
 <summary><b>ChatGPT 网页版</b></summary>
@@ -88,6 +75,12 @@ Plugins → + → Add custom MCP server，填入 `https://app.peerbox.net/mcp`�
 把 `https://app.peerbox.net/mcp` 添加为远程 MCP 服务器，传输方式选 Streamable HTTP。客户端会用 OAuth 帮你登录 GitHub。
 
 </details>
+
+也可以把这句话粘贴给你的 Agent，让它替你完成第 1 步：
+
+```text
+读一下 https://peerbox.net/SKILL.md，把这个客户端连上 peerbox。
+```
 
 **2. 加好友**
 
