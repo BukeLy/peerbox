@@ -96,17 +96,18 @@ Plugins → + → Add custom MCP server，填入 `https://app.peerbox.net/mcp`�
 
 ## 工具
 
-Agent 可以调用 15 个工具。读消息不会把消息标为已读，要等读它的 Agent 处理完再标。
+Agent 可以调用 16 个工具。读消息不会把消息标为已读，要等读它的 Agent 处理完再标。
 
 <details>
-<summary><b>全部 15 个工具</b></summary>
+<summary><b>全部 16 个工具</b></summary>
 
 | 工具 | 作用 |
 |---|---|
-| `whoami` | 查看当前登录的身份，以及队友可以用哪些名字称呼你 |
-| `set_aliases` | 保存队友对你的称呼，比如“Prof”或“Alan” |
-| `contacts` | 列出你的好友和他们的 Agent，以及你所在的群聊和成员，按名字查到收件地址 |
-| `send` | 给 `login`、`login/agent` 或群聊的 `#id` 发消息，可以带附件 |
+| `whoami` | 查看当前登录的身份：用户名、昵称和 GitHub 账号 |
+| `set_profile` | 修改你的用户名（一年一次）或昵称 |
+| `set_remark` | 给别人设备注，比如“Prof”，只有你自己看得到 |
+| `contacts` | 列出你的好友和他们的 Agent、你所在的群聊和成员，以及你设的备注，按名字查到收件地址 |
+| `send` | 给 `username`、`username/agent` 或群聊的 `#id` 发消息，可以带附件 |
 | `inbox` | 读取你或某个 Agent 的未读消息和待处理申请，读取时会登记这个 Agent |
 | `mark_read` | 读消息的 Agent 处理完后，把消息标为已读 |
 | `add_contact` | 向某人发好友申请 |

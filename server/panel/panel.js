@@ -45,7 +45,7 @@
     walk(marked.lexer(text));
     return out.join("").replace(/\s+/g, " ").trim();
   };
-  const data = { me: null, name: null, people: {}, agents: {}, groups: {}, convs: null, open: null };
+  const data = { me: null, name: null, people: {}, agents: {}, groups: {}, remarks: {}, convs: null, open: null };
   // opened: the ids of the messages whose delivery list is open, so a redraw draws it open again
   const state = { query: "", arrived: new Set(), opened: new Set(), failed: null, updated: null };
   // attachment URLs already shown, kept until shortly before they expire: a fresh presigned URL downloads the image again
@@ -75,11 +75,14 @@
   const KIND = {
     person: {
       glyph: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3.2 13.5c.6-2.5 2.5-3.9 4.8-3.9s4.2 1.4 4.8 3.9"/>',
-      label: (a) => (a === data.me ? "You" : a),
+      label: (a) => (a === data.me ? "You" : data.remarks[a] ?? a),
       addr: named,
       detail: (a) => data.people[a]?.name ?? "Person",
       noun: () => "Person",
-      facts: (a, c) => `<p class="kv"><span>Name</span><span>${esc(data.people[a]?.name ?? "—")}</span></p>${members("Your side", c?.sides ?? [], a)}`,
+      // GitHub vouches for the login, not the username, which anyone may choose
+      facts: (a, c) => `<p class="kv"><span>Username</span><span>${esc(a)}</span></p>
+        <p class="kv"><span>Name</span><span>${esc(data.people[a]?.name ?? "—")}</span></p>
+        <p class="kv"><span>GitHub</span><span>${data.people[a]?.github ? `✓ ${esc(data.people[a].github)}` : "—"}</span></p>${members("Your side", c?.sides ?? [], a)}`,
       subtitle: (a) => (a === data.me ? "Messages to yourself" : data.people[a]?.name ?? "Person"),
       ...direct,
     },
@@ -118,7 +121,7 @@
   const about = (a) => KIND[kind(a)];
   const label = (a) => about(a).label(a);
   const addr = (a) => about(a).addr(a);
-  // a conversation is named by its other side; the one with yourself by your login, marked as you
+  // a conversation is named by its other side; the one with yourself by your username, marked as you
   const title = (k) => (k === data.me ? `${k} (you)` : label(k));
   const titled = (k) => (k === data.me ? `<span class="addr">${esc(k)} <span class="you">(you)</span></span>` : addr(k));
   const glyph = (a) => `<svg class="kind" viewBox="0 0 16 16" aria-hidden="true">${about(a).glyph}</svg>`;
@@ -165,11 +168,12 @@
 
   const load = async () => {
     const [me, list] = await Promise.all([get("/api/me"), get("/api/conversations")]);
-    data.me = me.login;
-    data.people = Object.fromEntries(me.people.map((p) => [p.login, p]));
-    data.agents = Object.fromEntries(me.people.flatMap((p) => p.agents.map((a) => [`${p.login}/${a.name}`, a])));
+    data.me = me.username;
+    data.people = Object.fromEntries(me.people.map((p) => [p.username, p]));
+    data.agents = Object.fromEntries(me.people.flatMap((p) => p.agents.map((a) => [`${p.username}/${a.name}`, a])));
     data.groups = Object.fromEntries(me.groups.map((g) => [g.address, g]));
-    data.name = data.people[data.me]?.name;
+    data.remarks = me.remarks;
+    data.name = me.name;
     const seen = data.convs && new Map(data.convs.map((c) => [c.key, c.last.sent_at]));
     if (seen) for (const c of list.conversations) if (seen.get(c.key) !== c.last.sent_at) state.arrived.add(c.key);
     data.convs = list.conversations;

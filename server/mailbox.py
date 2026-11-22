@@ -1,15 +1,14 @@
-"""The message rules, as SQL: addresses, contacts and requests, deliveries, groups,
-attachments and stored event subscriptions. The MCP tools and the panel call the names
-without a leading _."""
+"""The message rules, as SQL: accounts and addresses, contacts and requests, remarks,
+deliveries, groups, attachments and stored event subscriptions. The MCP tools and the
+panel call the names without a leading _."""
 
 import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from secrets import token_hex
-from typing import Self
 
-from asyncpg import Connection
+from asyncpg import Connection, UniqueViolationError
 from fastmcp.exceptions import ToolError
 
 import bucket
@@ -21,19 +20,23 @@ _SENT_ONCE = "Each attachment must come from your own attach and can be sent onc
 # makes everyone it admits everyone's contact. Unset: the public instance's rules,
 # whoever hosts it, where anyone with a GitHub account may join.
 GITHUB_ORG = os.environ.get("GITHUB_ORG") or None
-# The Postgres channel that names a person when something of theirs changed: a
-# message or request to or from them, a read, a contact or a group they are in.
+# The Postgres channel that names a person, by account id, when something of theirs
+# changed: a message or request to or from them, a read, a contact or a group they
+# are in.
 CHANNEL = "inboxes"
 
 _HISTORY_PAGE = 50  # messages the panel loads at a time
 _MAX_GROUP_PEOPLE = 50
 _MAX_FILE_NAME = 200  # characters; a longer name is cut
-# The messages that involve login or any of their agents, each with its
+# The messages that involve person $1 or any of their agents, each with its
 # conversation's key: the group's address, or the address on the other side;
-# between two of login's own addresses, the one that sorts last, so both
-# directions are one conversation.
+# between two of their own addresses, the one that sorts last, so both directions
+# are one conversation.
 _MINE = """
-    select m.*, case
+    select m.*, address(m.sender, m.sender_agent) as "from",
+    coalesce(group_address(m.group_id), address(m.recipient, m.recipient_agent))
+        as "to",
+    case
         when m.group_id is not null then group_address(m.group_id)
         when m.sender = $1 and m.recipient = $1 then greatest(
             address(m.sender, m.sender_agent), address(m.recipient, m.recipient_agent)
@@ -46,13 +49,15 @@ _MINE = """
 """
 # A writer may post to a group when their address, or they as a person, is a member.
 _IN_GROUP = (
-    "select exists(select from group_members where group_id = $1 and login = $2 "
+    "select exists(select from group_members where group_id = $1 and person = $2 "
     "and (agent is null or agent = $3))"
 )
 # The unread deliveries to address ($1, $2), each at its event position.
 _UNREAD = (
-    "select d.id as position, 'message' as kind, m.id, m.sender, m.sender_agent, "
-    "m.recipient, m.recipient_agent, m.group_id, m.body, m.reply_to, m.created_at "
+    "select d.id as position, 'message' as kind, m.id, "
+    'address(m.sender, m.sender_agent) as "from", '
+    "coalesce(group_address(m.group_id), address(m.recipient, m.recipient_agent)) "
+    'as "to", m.body, m.reply_to, m.created_at '
     "from deliveries d join messages m on m.id = d.message_id "
     "where d.recipient = $1 and d.recipient_agent is not distinct from $2 "
     "and d.read_at is null"
@@ -60,11 +65,17 @@ _UNREAD = (
 # The requests address ($1, $2) sees and answers: a contact request asks the
 # person, so it shows in all their inboxes; an invitation is for one address.
 _REQUESTS_FOR = (
-    "target_login = $1 "
-    "and (kind = 'contact_request' or target_agent is not distinct from $2)"
+    "target = $1 and (kind = 'contact_request' or target_agent is not distinct from $2)"
 )
-# A contact pair ($1, $2), stored once with the lesser login first.
-_PAIR = "least($1::text, $2::text), greatest($1::text, $2::text)"
+# A contact pair ($1, $2), stored once with the lesser id first.
+_PAIR = "least($1::bigint, $2::bigint), greatest($1::bigint, $2::bigint)"
+# The people whose contacts or groups list person $1, themselves included; $2 is
+# whether everyone is a contact.
+_SEEN_BY = (
+    "select id as person from users where is_contact($1, id, $2) "
+    "union select person from group_members where group_id in "
+    "(select group_id from group_members where person = $1)"
+)
 
 
 class Refused(ToolError):
@@ -73,32 +84,49 @@ class Refused(ToolError):
 
 @dataclass(frozen=True)
 class Address:
-    """Where a message goes or comes from: a person's login, `login/agent` for one of
-    their agents, or `#id` for a group."""
+    """Where a message goes or comes from: a person, `username/agent` for one of their
+    agents, or `#id` for a group. A person is their account id, shown by username."""
 
-    login: str | None = None
+    person: int | None = None
     agent: str | None = None
     group: str | None = None
-
-    @classmethod
-    def parse(cls, text: str) -> Self:
-        if text.startswith("#"):
-            return cls(group=text.removeprefix("#"))
-        login, _, agent = text.partition("/")
-        return cls(login, agent or None)
+    username: str | None = None
 
     def __str__(self) -> str:
         if self.group is not None:
             return f"#{self.group}"
-        return f"{self.login}/{self.agent}" if self.agent else str(self.login)
+        return f"{self.username}/{self.agent}" if self.agent else str(self.username)
+
+
+async def resolve(db: Connection, text: str) -> Address:
+    """The address text names: a group's `#id`, or a username in any case, with
+    `/agent` for one of their agents. Refuses a username nobody holds, naming the
+    close matches."""
+    if text.startswith("#"):
+        return Address(group=text.removeprefix("#"))
+    username, _, agent = text.partition("/")
+    row = await db.fetchrow(
+        "select id, username from users where lower(username) = lower($1)", username
+    )
+    if row is None:
+        candidates = await db.fetch(
+            "select username from users where username ilike $1 or name ilike $1 "
+            "order by username limit 10",
+            f"%{username}%",
+        )
+        names = ", ".join(row["username"] for row in candidates) or "none"
+        raise Refused(
+            f"No one on peerbox has the username '{username}'. Close matches: {names}."
+        )
+    return Address(row["id"], agent or None, username=row["username"])
 
 
 def _message(row) -> dict:
     """A message as an agent reads it."""
     return {
         "id": row["id"],
-        "from": str(Address(row["sender"], row["sender_agent"])),
-        "to": str(Address(row["recipient"], row["recipient_agent"], row["group_id"])),
+        "from": row["from"],
+        "to": row["to"],
         "sent_at": row["created_at"],
         "reply_to": row["reply_to"],
         "text": row["body"],
@@ -113,53 +141,38 @@ def _lists_by(rows, key: str, shape) -> dict:
     return lists
 
 
-async def _wake(db: Connection, logins: list[str]) -> None:
+async def _wake(db: Connection, people: list[int]) -> None:
     """Tell these people's panels and event subscriptions that something of theirs
     changed; inside a transaction, once it commits."""
     await db.execute(
-        f"select pg_notify('{CHANNEL}', login) from unnest($1::text[]) as login",
-        list(set(logins)),
+        f"select pg_notify('{CHANNEL}', person::text) "
+        "from unnest($1::bigint[]) as person",
+        list(set(people)),
     )
 
 
-async def _wake_group(db: Connection, group_id: str, *logins: str) -> None:
+async def _wake_group(db: Connection, group_id: str, *people: int) -> None:
     """Wake the group's members, and these people, when who is in it changed."""
     members = await db.fetch(
-        "select login from group_members where group_id = $1", group_id
+        "select person from group_members where group_id = $1", group_id
     )
-    await _wake(db, [*logins, *(row["login"] for row in members)])
+    await _wake(db, [*people, *(row["person"] for row in members)])
 
 
 def _everyone_is_a_contact() -> bool:
     return GITHUB_ORG is not None
 
 
-async def _is_contact(db: Connection, login: str, other: str) -> bool:
+async def _is_contact(db: Connection, person: int, other: int) -> bool:
     return await db.fetchval(
-        "select is_contact($1, $2, $3)", login, other, _everyone_is_a_contact()
+        "select is_contact($1, $2, $3)", person, other, _everyone_is_a_contact()
     )
 
 
-async def _require_person(db: Connection, login: str) -> None:
-    """Refuse a login no one on peerbox has, naming the close matches."""
-    if not await db.fetchval(
-        "select exists(select 1 from users where login = $1)", login
-    ):
-        candidates = await db.fetch(
-            "select login from users where login ilike $1 or name ilike $1 "
-            "or exists (select 1 from unnest(aliases) alias where alias ilike $1)",
-            f"%{login}%",
-        )
-        names = ", ".join(row["login"] for row in candidates) or "none"
-        raise Refused(
-            f"No one on peerbox has the login '{login}'. Close matches: {names}."
-        )
-
-
-async def _require_own_agent(db: Connection, login: str, agent: str) -> None:
+async def _require_own_agent(db: Connection, person: int, agent: str) -> None:
     if not await db.fetchval(
         "select exists(select from agents where owner = $1 and name = $2)",
-        login,
+        person,
         agent,
     ):
         raise Refused(
@@ -174,53 +187,182 @@ async def _require_reachable(
     """Refuse unless writer may write to, or invite, `to`: a group writer is in, or a
     contact or one of their agents. Returns when that agent last read its inbox."""
     if to.group is not None:
-        if not await db.fetchval(_IN_GROUP, to.group, writer.login, writer.agent):
+        if not await db.fetchval(_IN_GROUP, to.group, writer.person, writer.agent):
             raise Refused(f"{writer} is not in {to}. Call contacts for your groups.")
         return None
-    await _require_person(db, to.login)
-    if not await _is_contact(db, writer.login, to.login):
+    if not await _is_contact(db, writer.person, to.person):
         raise Refused(
-            f"{to.login} is not your contact. Ask with add_contact; once they accept, "
-            "you can write to them and invite them."
+            f"{to.username} is not your contact. Ask with add_contact; once they "
+            "accept, you can write to them and invite them."
         )
     if to.agent is None:
         return None
     agent = await db.fetchrow(
         "select last_seen from agents where owner = $1 and name = $2",
-        to.login,
+        to.person,
         to.agent,
     )
     if agent is None:
-        raise Refused(f"{to.login} has no agent named '{to.agent}'. Call contacts.")
+        raise Refused(f"{to.username} has no agent named '{to.agent}'. Call contacts.")
     return agent["last_seen"]
 
 
-async def caller(
-    db: Connection, login: str, name: str | None, agent: str | None = None
-) -> Address:
-    """The address a signed-in person acts as: them, or one of their agents, which
-    must have read its inbox once. Records the person under the name GitHub gives."""
-    await db.execute(
-        "insert into users (login, name) values ($1, $2) "
-        "on conflict (login) do update set name = excluded.name",
-        login,
-        name,
+async def account(
+    db: Connection, provider: str, subject: str, login: str, name: str | None
+) -> tuple[int, str]:
+    """The id and username of the account that signs in as subject, made at its first
+    sign-in: its username starts as login, or login-2, login-3 and so on when that
+    is taken, and its display name as name. Keeps login, the provider's name for
+    them, current."""
+    # Retried when a sign-in at the same time takes what this one chose.
+    for _ in range(5):
+        row = await db.fetchrow(
+            "with refreshed as (update identities set login = $3 "
+            "where (provider, subject) = ($1, $2) and login <> $3) "
+            "select u.id, u.username from identities i join users u on u.id = i.user_id "
+            "where (i.provider, i.subject) = ($1, $2)",
+            provider,
+            subject,
+            login,
+        )
+        if row is not None:
+            return row["id"], row["username"]
+        try:
+            async with db.transaction():
+                username = await db.fetchval(
+                    "select candidate from (select $1::text as candidate, 1 as n "
+                    "union all select $1 || '-' || n, n from generate_series(2, 1000) n) c "
+                    "where not exists (select from usernames "
+                    "where lower(username) = lower(candidate)) order by n limit 1",
+                    login,
+                )
+                person = await db.fetchval(
+                    "insert into users (username, name) values ($1, $2) returning id",
+                    username,
+                    name,
+                )
+                await db.execute(
+                    "insert into usernames (username, user_id) values ($1, $2)",
+                    username,
+                    person,
+                )
+                await db.execute(
+                    "insert into identities (provider, subject, user_id, login) "
+                    "values ($1, $2, $3, $4)",
+                    provider,
+                    subject,
+                    person,
+                    login,
+                )
+            return person, username
+        except UniqueViolationError:
+            continue
+    raise Refused("Another sign-in got in the way of this one. Try again.")
+
+
+async def caller(db: Connection, claims: dict, agent: str | None = None) -> Address:
+    """The address a person signed in with GitHub acts as: them, or one of their
+    agents, which must have read its inbox once. claims are GitHub's: sub, the
+    numeric user id that names them for good; login; and name."""
+    person, username = await account(
+        db, "github", claims["sub"], claims["login"], claims.get("name")
     )
     if agent is not None:
-        await _require_own_agent(db, login, agent)
-    return Address(login, agent)
+        await _require_own_agent(db, person, agent)
+    return Address(person, agent, username=username)
 
 
-async def person(db: Connection, login: str) -> dict:
-    row = await db.fetchrow("select name, aliases from users where login = $1", login)
-    return {"login": login, "name": row["name"], "aliases": row["aliases"]}
+async def person(db: Connection, person: int) -> dict | None:
+    """How a person is shown: username, display name and GitHub login."""
+    row = await db.fetchrow(
+        "select username, name, github(id) from users where id = $1", person
+    )
+    return row and {
+        "username": row["username"],
+        "name": row["name"],
+        "github": row["github"],
+    }
 
 
-async def set_aliases(db: Connection, login: str, aliases: list[str]) -> list[str]:
-    """Replace the names others can find login by; returns them, trimmed and sorted."""
-    cleaned = sorted({alias.strip() for alias in aliases} - {""})
-    await db.execute("update users set aliases = $2 where login = $1", login, cleaned)
-    return cleaned
+async def set_profile(
+    db: Connection, you: Address, username: str | None, name: str | None
+) -> dict:
+    """Change your username, display name or both. A username changes once a year,
+    to one nobody else holds or held; one you gave up you may take back."""
+    async with db.transaction():
+        if username is not None and username != you.username:
+            holder = await db.fetchval(
+                "select user_id from usernames where lower(username) = lower($1)",
+                username,
+            )
+            if holder not in (None, you.person):
+                raise Refused(f"The username '{username}' is taken. Choose another.")
+            next_change = await db.fetchval(
+                "select username_changed_at + interval '1 year' from users "
+                "where id = $1 and username_changed_at > now() - interval '1 year'",
+                you.person,
+            )
+            if next_change is not None:
+                raise Refused(
+                    "A username changes once a year; yours can change again after "
+                    f"{next_change:%Y-%m-%d}."
+                )
+            try:
+                await db.execute(
+                    "insert into usernames (username, user_id) values ($1, $2) "
+                    "on conflict ((lower(username))) do update "
+                    "set username = excluded.username "
+                    "where usernames.user_id = excluded.user_id",
+                    username,
+                    you.person,
+                )
+                await db.execute(
+                    "update users set username = $2, username_changed_at = now() "
+                    "where id = $1",
+                    you.person,
+                    username,
+                )
+            except UniqueViolationError:  # taken by a change at the same time
+                raise Refused(
+                    f"The username '{username}' is taken. Choose another."
+                ) from None
+        if name is not None:
+            await db.execute(
+                "update users set name = $2 where id = $1", you.person, name
+            )
+        seen_by = await db.fetch(_SEEN_BY, you.person, _everyone_is_a_contact())
+        await _wake(db, [row["person"] for row in seen_by])
+    return await person(db, you.person)
+
+
+async def set_remark(db: Connection, owner: int, other: Address, remark: str) -> None:
+    """Give other a remark only owner sees, or with an empty one, take it away."""
+    remark = remark.strip()
+    if not remark:
+        await db.execute(
+            "delete from remarks where owner = $1 and person = $2", owner, other.person
+        )
+    else:
+        try:
+            await db.execute(
+                "insert into remarks (owner, person, remark) values ($1, $2, $3) "
+                "on conflict (owner, person) do update set remark = excluded.remark",
+                owner,
+                other.person,
+                remark,
+            )
+        except UniqueViolationError:
+            named = await db.fetchval(
+                "select address(person, null) from remarks "
+                "where owner = $1 and lower(remark) = lower($2)",
+                owner,
+                remark,
+            )
+            raise Refused(
+                f"You already call {named} '{remark}'. Give {other} another remark, "
+                f"or change {named}'s first."
+            ) from None
+    await _wake(db, [owner])
 
 
 async def send(
@@ -239,14 +381,14 @@ async def send(
             f"No message {reply_to} to reply to: messages are deleted after 30 days. "
             "Send without reply_to."
         )
-    files = await _sendable(db, writer.login, attachments or [])
+    files = await _sendable(db, writer.person, attachments or [])
     async with db.transaction():
         message_id = await db.fetchval(
             "insert into messages (sender, sender_agent, recipient, recipient_agent, "
             "group_id, body, reply_to) values ($1, $2, $3, $4, $5, $6, $7) returning id",
-            writer.login,
+            writer.person,
             writer.agent,
-            to.login,
+            to.person,
             to.agent,
             to.group,
             text,
@@ -257,10 +399,10 @@ async def send(
                 "insert into deliveries (message_id, recipient, recipient_agent) "
                 "values ($1, $2, $3)",
                 message_id,
-                to.login,
+                to.person,
                 to.agent,
             )
-            recipients = [to.login]
+            recipients = [to.person]
             status = "in their inbox"
             if to.agent:
                 status = f"in the agent's inbox; it last checked at {last_seen}"
@@ -270,12 +412,12 @@ async def send(
             # which keeps them from looping.
             delivered = await db.fetch(
                 "insert into deliveries (message_id, recipient, recipient_agent) "
-                "select $1, login, agent from group_members where group_id = $2 "
-                "and not (login = $3 and agent is not distinct from $4) "
+                "select $1, person, agent from group_members where group_id = $2 "
+                "and not (person = $3 and agent is not distinct from $4) "
                 "returning recipient",
                 message_id,
                 to.group,
-                writer.login,
+                writer.person,
                 writer.agent,
             )
             recipients = [row["recipient"] for row in delivered]
@@ -291,11 +433,11 @@ async def send(
         )
         if len(claimed) < len(files):
             raise Refused(_SENT_ONCE)
-        await _wake(db, [writer.login, *recipients])
+        await _wake(db, [writer.person, *recipients])
     return {"id": message_id, "to": str(to), "status": status}
 
 
-async def _sendable(db: Connection, owner: str, ids: list[int]) -> list[tuple]:
+async def _sendable(db: Connection, owner: int, ids: list[int]) -> list[tuple]:
     """The writer's unsent attachments with their sizes. An upload is checked in the
     bucket, since its size is only known once it is there."""
     rows = await db.fetch(
@@ -329,19 +471,19 @@ async def inbox(db: Connection, reader: Address, limit: int) -> dict:
         if await db.fetchval(
             "insert into agents (owner, name, last_seen) values ($1, $2, now()) "
             "on conflict (owner, name) do nothing returning true",
-            reader.login,
+            reader.person,
             reader.agent,
         ):
-            await _wake(db, [reader.login])  # their panel gains its inbox
+            await _wake(db, [reader.person])  # their panel gains its inbox
         else:
             await db.execute(
                 "update agents set last_seen = now() where owner = $1 and name = $2",
-                reader.login,
+                reader.person,
                 reader.agent,
             )
     rows = await db.fetch(
         f"{_UNREAD} order by position limit $3",
-        reader.login,
+        reader.person,
         reader.agent,
         limit + 1,
     )
@@ -357,10 +499,12 @@ async def waiting(db: Connection, reader: Address, after: int) -> list[dict]:
     reader's unread messages and the requests it sees, each with its kind and
     position."""
     rows = await db.fetch(
-        f"{_UNREAD} and d.id > $3 union all select id, kind, id, asker, asker_agent, "
-        "target_login, target_agent, group_id, greeting, null, created_at "
-        f"from requests where {_REQUESTS_FOR} and id > $3 order by position",
-        reader.login,
+        f"{_UNREAD} and d.id > $3 union all select id, kind, id, "
+        "address(asker, asker_agent), "
+        "coalesce(group_address(group_id), address(target, target_agent)), "
+        f"greeting, null, created_at from requests where {_REQUESTS_FOR} and id > $3 "
+        "order by position",
+        reader.person,
         reader.agent,
         after,
     )
@@ -418,22 +562,17 @@ async def _messages(db: Connection, rows: list) -> list[dict]:
 
 
 async def _requests(db: Connection, reader: Address) -> list[dict]:
-    """The requests waiting for the reader, oldest first."""
-    rows = await db.fetch(
-        "select id, kind, asker, asker_agent, group_id, greeting from requests "
-        f"where {_REQUESTS_FOR} order by id",
-        reader.login,
-        reader.agent,
-    )
+    """The requests waiting for the reader, oldest first, each with the GitHub login
+    of whoever asked."""
     return [
-        {
-            "id": row["id"],
-            "kind": row["kind"],
-            "from": str(Address(row["asker"], row["asker_agent"])),
-            "group": str(Address(group=row["group_id"])) if row["group_id"] else None,
-            "greeting": row["greeting"],
-        }
-        for row in rows
+        dict(row)
+        for row in await db.fetch(
+            'select id, kind, address(asker, asker_agent) as "from", '
+            'github(asker), group_address(group_id) as "group", greeting '
+            f"from requests where {_REQUESTS_FOR} order by id",
+            reader.person,
+            reader.agent,
+        )
     ]
 
 
@@ -448,7 +587,7 @@ async def mark_read(db: Connection, reader: Address, ids: list[int]) -> int:
         "select sender from messages where id in (select message_id from marked) "
         "union select recipient from deliveries "
         "where message_id in (select message_id from marked)) as shown_to",
-        reader.login,
+        reader.person,
         reader.agent,
         ids,
     )
@@ -457,9 +596,9 @@ async def mark_read(db: Connection, reader: Address, ids: list[int]) -> int:
     return marked["count"]
 
 
-async def conversations(db: Connection, login: str) -> dict:
-    """login's conversations, newest first: each with its last message, the addresses
-    of login's side in it and what waits there."""
+async def conversations(db: Connection, person: int) -> dict:
+    """person's conversations, newest first: each with its last message, the
+    addresses of their side in it and what waits there."""
     rows = await db.fetch(
         f"with mine as ({_MINE}), "
         "sides as (select x.key, address(d.recipient, d.recipient_agent) as side, "
@@ -467,22 +606,21 @@ async def conversations(db: Connection, login: str) -> dict:
         "join deliveries d on d.message_id = x.id and d.recipient = $1 "
         "union all select key, address(sender, sender_agent), false, created_at "
         "from mine where sender = $1) "
-        "select distinct on (x.key) x.key, x.sender, x.sender_agent, x.body, "
-        "x.created_at, g.name, "
+        'select distinct on (x.key) x.key, x."from", x.body, x.created_at, g.name, '
         "(select array_agg(distinct side) from sides s where s.key = x.key) as sides, "
         "(select count(*) from sides s where s.key = x.key and waits) as waiting, "
         "(select min(created_at) from sides s where s.key = x.key and waits) "
         "as waiting_since "
         "from mine x left join groups g on group_address(g.id) = x.key "
         "order by x.key, x.id desc",
-        login,
+        person,
     )
     listed = [
         {
             "key": row["key"],
             "name": row["name"],
             "last": {
-                "from": str(Address(row["sender"], row["sender_agent"])),
+                "from": row["from"],
                 "text": row["body"],
                 "sent_at": row["created_at"],
             },
@@ -499,13 +637,13 @@ async def conversations(db: Connection, login: str) -> dict:
     }
 
 
-async def history(db: Connection, login: str, key: str, before: int | None) -> dict:
+async def history(db: Connection, person: int, key: str, before: int | None) -> dict:
     """One conversation's messages before message id before, oldest first, each with
     its attachments and the state of each of its deliveries."""
     rows = await db.fetch(
         f"with mine as ({_MINE}) select * from mine where key = $2 "
         "and ($3::bigint is null or id < $3) order by id desc limit $4",
-        login,
+        person,
         key,
         before,
         _HISTORY_PAGE + 1,
@@ -530,29 +668,34 @@ async def history(db: Connection, login: str, key: str, before: int | None) -> d
     }
 
 
-async def contacts_and_groups(db: Connection, login: str) -> dict:
-    """login's contacts with their agents, and the groups login is in with their
-    members."""
+async def contacts_and_groups(db: Connection, person: int) -> dict:
+    """person's contacts with their agents, the groups person is in with their
+    members, and person's remarks, by username."""
     everyone = _everyone_is_a_contact()
     users = await db.fetch(
-        "select login, name, aliases from users where is_contact($1, login, $2) "
-        "order by login",
-        login,
+        "select id, username, name, github(id) from users "
+        "where is_contact($1, id, $2) order by lower(username)",
+        person,
         everyone,
     )
     agents = await db.fetch(
         "select owner, name, description, last_seen from agents "
         "where is_contact($1, owner, $2) order by name",
-        login,
+        person,
         everyone,
     )
     groups = await db.fetch(
         "select g.id, g.name, address(g.owner, g.owner_agent) as owner, "
-        "array_agg(address(m.login, m.agent) order by m.joined_at) as members "
+        "array_agg(address(m.person, m.agent) order by m.joined_at) as members "
         "from groups g join group_members m on m.group_id = g.id "
-        "where g.id in (select group_id from group_members where login = $1) "
+        "where g.id in (select group_id from group_members where person = $1) "
         "group by g.id order by g.created_at",
-        login,
+        person,
+    )
+    remarks = await db.fetch(
+        "select address(person, null) as username, remark from remarks "
+        "where owner = $1 order by 1",
+        person,
     )
     by_owner = _lists_by(
         agents,
@@ -566,10 +709,10 @@ async def contacts_and_groups(db: Connection, login: str) -> dict:
     return {
         "people": [
             {
-                "login": user["login"],
+                "username": user["username"],
                 "name": user["name"],
-                "aliases": user["aliases"],
-                "agents": by_owner.get(user["login"], []),
+                "github": user["github"],
+                "agents": by_owner.get(user["id"], []),
             }
             for user in users
         ],
@@ -582,6 +725,7 @@ async def contacts_and_groups(db: Connection, login: str) -> dict:
             }
             for group in groups
         ],
+        "remarks": {row["username"]: row["remark"] for row in remarks},
     }
 
 
@@ -591,11 +735,11 @@ async def create_group(db: Connection, owner: Address, name: str) -> Address:
     await db.execute(
         "with created as (insert into groups (id, name, owner, owner_agent) "
         "values ($1, $2, $3, $4) returning id) "
-        "insert into group_members (group_id, login, agent) "
+        "insert into group_members (group_id, person, agent) "
         "select id, $3, $4 from created",
         group.group,
         name,
-        owner.login,
+        owner.person,
         owner.agent,
     )
     return group
@@ -603,10 +747,10 @@ async def create_group(db: Connection, owner: Address, name: str) -> Address:
 
 async def _join(db: Connection, group: Address, member: Address) -> None:
     await db.execute(
-        "insert into group_members (group_id, login, agent) values ($1, $2, $3) "
+        "insert into group_members (group_id, person, agent) values ($1, $2, $3) "
         "on conflict do nothing",
         group.group,
-        member.login,
+        member.person,
         member.agent,
     )
 
@@ -616,9 +760,9 @@ async def invite(
 ) -> str:
     """Add one of the inviter's own addresses, or invite a contact's."""
     await _require_reachable(db, inviter, group)
-    if member.login == inviter.login:
+    if member.person == inviter.person:
         if member.agent:
-            await _require_own_agent(db, inviter.login, member.agent)
+            await _require_own_agent(db, inviter.person, member.agent)
         async with db.transaction():
             await _join(db, group, member)
             await _wake_group(db, group.group)
@@ -626,16 +770,16 @@ async def invite(
     await _require_reachable(db, inviter, member)
     async with db.transaction():
         await db.execute(
-            "insert into requests (kind, asker, asker_agent, target_login, "
-            "target_agent, group_id) values ('invitation', $1, $2, $3, $4, $5) "
+            "insert into requests (kind, asker, asker_agent, target, target_agent, "
+            "group_id) values ('invitation', $1, $2, $3, $4, $5) "
             "on conflict do nothing",
-            inviter.login,
+            inviter.person,
             inviter.agent,
-            member.login,
+            member.person,
             member.agent,
             group.group,
         )
-        await _wake(db, [inviter.login, member.login])
+        await _wake(db, [inviter.person, member.person])
     return "invited; it joins when they accept"
 
 
@@ -652,36 +796,36 @@ async def leave(
             "select address(owner, owner_agent) from groups where id = $1 for update",
             group.group,
         )
-        if member.login != actor.login and owner != str(actor):
+        if member.person != actor.person and owner != str(actor):
             raise Refused(
                 f"Only the owner of {group} can remove other people's addresses."
             )
         if not await db.fetchval(
-            "delete from group_members where group_id = $1 and login = $2 "
+            "delete from group_members where group_id = $1 and person = $2 "
             "and agent is not distinct from $3 returning true",
             group.group,
-            member.login,
+            member.person,
             member.agent,
         ):
             raise Refused(f"{member} is not in {group}.")
         await _pass_on_ownership(db, [group.group])
-        await _wake_group(db, group.group, member.login)
+        await _wake_group(db, group.group, member.person)
 
 
 async def _pass_on_ownership(db: Connection, group_ids: list[str]) -> None:
     """Hand each group whose owner address left to the member that joined first. A
     group nobody is left in has no owner."""
     await db.execute(
-        "update groups g set (owner, owner_agent) = (select login, agent "
+        "update groups g set (owner, owner_agent) = (select person, agent "
         "from group_members where group_id = g.id order by joined_at limit 1) "
         "where id = any($1) and not exists (select from group_members m "
-        "where m.group_id = g.id and m.login = g.owner "
+        "where m.group_id = g.id and m.person = g.owner "
         "and m.agent is not distinct from g.owner_agent)",
         group_ids,
     )
 
 
-async def _unblock(db: Connection, blocker: str, blocked: str) -> bool:
+async def _unblock(db: Connection, blocker: int, blocked: int) -> bool:
     """Lift blocker's block on blocked; whether there was one."""
     return bool(
         await db.fetchval(
@@ -692,45 +836,44 @@ async def _unblock(db: Connection, blocker: str, blocked: str) -> bool:
     )
 
 
-async def _make_contacts(db: Connection, login: str, other: str) -> None:
+async def _make_contacts(db: Connection, person: int, other: int) -> None:
     await db.execute(
         f"insert into contacts (a, b) values ({_PAIR}) on conflict do nothing",
-        login,
+        person,
         other,
     )
 
 
 async def add_contact(
-    db: Connection, asker: Address, other: str, greeting: str | None
+    db: Connection, asker: Address, other: Address, greeting: str | None
 ) -> str:
-    await _require_person(db, other)
-    unblocked = await _unblock(db, asker.login, other)
-    if await _is_contact(db, asker.login, other):
+    unblocked = await _unblock(db, asker.person, other.person)
+    if await _is_contact(db, asker.person, other.person):
         if unblocked:
-            await _wake(db, [asker.login, other])  # they see each other again
+            await _wake(db, [asker.person, other.person])  # they see each other again
         return "already your contact"
     if await db.fetchval(
         "select exists(select from blocks where blocker = $1 and blocked = $2)",
-        other,
-        asker.login,
+        other.person,
+        asker.person,
     ):
         raise Refused(f"{other} does not take contact requests from you.")
     async with db.transaction():
-        await _wake(db, [asker.login, other])
+        await _wake(db, [asker.person, other.person])
         if await db.fetchval(
             "delete from requests where kind = 'contact_request' and asker = $1 "
-            "and target_login = $2 returning true",
-            other,
-            asker.login,
+            "and target = $2 returning true",
+            other.person,
+            asker.person,
         ):
-            await _make_contacts(db, asker.login, other)
+            await _make_contacts(db, asker.person, other.person)
             return "now your contact: they had asked you"
         await db.execute(
-            "insert into requests (kind, asker, asker_agent, target_login, greeting) "
+            "insert into requests (kind, asker, asker_agent, target, greeting) "
             "values ('contact_request', $1, $2, $3, $4) on conflict do nothing",
-            asker.login,
+            asker.person,
             asker.agent,
-            other,
+            other.person,
             greeting,
         )
     return "asked; they become your contact when they accept"
@@ -743,7 +886,7 @@ async def answer(db: Connection, you: Address, request_id: int, accept: bool) ->
     async with db.transaction():
         request = await db.fetchrow(
             f"delete from requests where id = $3 and {_REQUESTS_FOR} returning *",
-            you.login,
+            you.person,
             you.agent,
             request_id,
         )
@@ -754,20 +897,20 @@ async def answer(db: Connection, you: Address, request_id: int, accept: bool) ->
                 "addresses already answered stays answered; inbox lists the requests "
                 "still waiting."
             )
-        await _wake(db, [you.login, request["asker"]])
+        await _wake(db, [you.person, request["asker"]])
         if not accept:
             return "declined"
         if request["kind"] == "contact_request":
             # Accepting is adding them, so it lifts your block too.
-            await _unblock(db, you.login, request["asker"])
-            await _make_contacts(db, you.login, request["asker"])
+            await _unblock(db, you.person, request["asker"])
+            await _make_contacts(db, you.person, request["asker"])
             return "accepted: now your contact"
         group = Address(group=request["group_id"])
         if await db.fetchval(
-            "select count(distinct login) >= $3 and not bool_or(login = $2) "
+            "select count(distinct person) >= $3 and not bool_or(person = $2) "
             "from group_members where group_id = $1",
             group.group,
-            you.login,
+            you.person,
             _MAX_GROUP_PEOPLE,
         ):
             raise Refused(f"{group} already has {_MAX_GROUP_PEOPLE} people.")
@@ -777,29 +920,27 @@ async def answer(db: Connection, you: Address, request_id: int, accept: bool) ->
         return f"accepted: now in {group}"
 
 
-async def remove_contact(db: Connection, login: str, other: str) -> None:
+async def remove_contact(db: Connection, person: int, other: Address) -> None:
     """Remove a contact and block them, so neither can write to the other."""
-    await _require_person(db, other)
     async with db.transaction():
-        await db.execute(f"delete from contacts where (a, b) = ({_PAIR})", login, other)
+        await db.execute(
+            f"delete from contacts where (a, b) = ({_PAIR})", person, other.person
+        )
         await db.execute(
             "insert into blocks (blocker, blocked) values ($1, $2) "
             "on conflict do nothing",
-            login,
-            other,
+            person,
+            other.person,
         )
-        await _wake(db, [login, other])
+        await _wake(db, [person, other.person])
 
 
-async def record_memberships(db: Connection, login: str, orgs: list[str]) -> None:
+async def record_memberships(db: Connection, person: int, orgs: list[str]) -> None:
     async with db.transaction():
-        await db.execute(
-            "insert into users (login) values ($1) on conflict do nothing", login
-        )
-        await db.execute("delete from memberships where login = $1", login)
+        await db.execute("delete from memberships where person = $1", person)
         await db.executemany(
-            "insert into memberships (login, org) values ($1, $2)",
-            [(login, org) for org in orgs],
+            "insert into memberships (person, org) values ($1, $2)",
+            [(person, org) for org in orgs],
         )
 
 
@@ -823,7 +964,7 @@ async def attach(
     id = await db.fetchval(
         "insert into attachments (owner, owner_agent, name, mime, size, key) "
         "values ($1, $2, $3, $4, $5, $6) returning id",
-        owner.login,
+        owner.person,
         owner.agent,
         name,
         mime,
@@ -837,7 +978,7 @@ async def attach(
 
 
 async def open_attachment(
-    db: Connection, login: str, id: int
+    db: Connection, person: int, id: int
 ) -> tuple[str, str, bytes]:
     """An attachment's name, type and bytes, for its owner or a recipient."""
     row = await db.fetchrow(
@@ -845,19 +986,20 @@ async def open_attachment(
         "or exists (select from deliveries "
         "where message_id = a.message_id and recipient = $2))",
         id,
-        login,
+        person,
     )
     if row is None:
         raise Refused(f"No attachment {id} that you sent or received.")
     return row["name"], row["mime"], await bucket.get(row["key"])
 
 
-async def delete_account(db: Connection, login: str) -> None:
-    """Delete a person and what is theirs: their agents, contacts, blocks,
-    organisation memberships, the requests they sent or received, every message they
-    or their agents sent, every message sent directly to them or their agents, their
-    copies of group messages, and their attachments, here and in the bucket. Groups
-    they owned pass on. Everyone whose panel showed any of it is woken."""
+async def delete_account(db: Connection, person: int) -> None:
+    """Delete a person and what is theirs: their sign-ins and usernames, agents,
+    contacts, blocks, remarks, organisation memberships, the requests they sent or
+    received, every message they or their agents sent, every message sent directly
+    to them or their agents, their copies of group messages, and their attachments,
+    here and in the bucket. Groups they owned pass on. Everyone whose panel showed
+    any of it is woken."""
     async with db.transaction():
         # The sender and every recipient of each message that loses a copy below,
         # in the groups the person already left too.
@@ -865,30 +1007,28 @@ async def delete_account(db: Connection, login: str) -> None:
             "with gone as (select id, sender from messages "
             "where sender = $1 or recipient = $1 "
             "or id in (select message_id from deliveries where recipient = $1)) "
-            "select sender as login from gone "
+            "select sender as person from gone "
             "union select recipient from deliveries "
-            "where message_id in (select id from gone) "
-            "union select login from users where is_contact($1, login, $2) "
-            "union select login from group_members where group_id in "
-            "(select group_id from group_members where login = $1) "
-            "union select asker from requests where target_login = $1 "
-            "union select target_login from requests where asker = $1",
-            login,
+            f"where message_id in (select id from gone) union {_SEEN_BY} "
+            "union select asker from requests where target = $1 "
+            "union select target from requests where asker = $1",
+            person,
             _everyone_is_a_contact(),
         )
-        await _wake(db, [row["login"] for row in affected])
-        keys = await db.fetch("select key from attachments where owner = $1", login)
+        await _wake(db, [row["person"] for row in affected])
+        keys = await db.fetch("select key from attachments where owner = $1", person)
         groups = await db.fetch(
-            "delete from group_members where login = $1 returning group_id", login
+            "delete from group_members where person = $1 returning group_id", person
         )
         await _pass_on_ownership(db, list({row["group_id"] for row in groups}))
         await db.execute(
-            "delete from messages where sender = $1 or recipient = $1", login
+            "delete from messages where sender = $1 or recipient = $1", person
         )
-        await db.execute("delete from deliveries where recipient = $1", login)
-        await db.execute("delete from agents where owner = $1", login)
-        # Contacts, blocks, memberships, requests and attachments go with the user.
-        await db.execute("delete from users where login = $1", login)
+        await db.execute("delete from deliveries where recipient = $1", person)
+        await db.execute("delete from agents where owner = $1", person)
+        # Sign-ins, usernames, contacts, blocks, remarks, memberships, requests and
+        # attachments go with the user.
+        await db.execute("delete from users where id = $1", person)
     for row in keys:
         await bucket.delete(row["key"])
 

@@ -88,17 +88,18 @@ Read https://peerbox.net/SKILL.md and connect this client to peerbox.
 
 ## Tools
 
-Agents get fifteen tools. Reading a message never marks it read; the agent that read it does that once it has handled it.
+Agents get sixteen tools. Reading a message never marks it read; the agent that read it does that once it has handled it.
 
 <details>
-<summary><b>All fifteen tools</b></summary>
+<summary><b>All sixteen tools</b></summary>
 
 | Tool | What it does |
 |---|---|
-| `whoami` | Shows who you are signed in as and the names teammates can use for you |
-| `set_aliases` | Saves the nicknames teammates call you, such as "Prof" or "Alan" |
-| `contacts` | Lists your contacts and their agents, and your groups and their members, to turn a name into an address |
-| `send` | Sends a message to `login`, `login/agent` or a group's `#id`, with attachments if you like |
+| `whoami` | Shows who you are signed in as: your username, display name and GitHub login |
+| `set_profile` | Changes your username, once a year, or your display name |
+| `set_remark` | Saves what you call someone, such as "Prof"; only you see it |
+| `contacts` | Lists your contacts and their agents, your groups and their members, and your remarks, to turn a name into an address |
+| `send` | Sends a message to `username`, `username/agent` or a group's `#id`, with attachments if you like |
 | `inbox` | Reads your unread messages and the requests waiting for you, or one agent's; reading registers that agent |
 | `mark_read` | Marks messages read once the agent that read them has handled them |
 | `add_contact` | Asks someone to become your contact |

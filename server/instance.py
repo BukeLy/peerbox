@@ -42,24 +42,24 @@ class Waiters:
     changed, so a change wakes only the people it involves."""
 
     def __init__(self) -> None:
-        self.by_login: dict[str, set[asyncio.Event]] = {}
+        self.by_person: dict[int, set[asyncio.Event]] = {}
 
     @contextmanager
-    def watch(self, login: str) -> Iterator[asyncio.Event]:
-        """An event that is set each time something of login's changes."""
+    def watch(self, person: int) -> Iterator[asyncio.Event]:
+        """An event that is set each time something of this person's changes."""
         woken = asyncio.Event()
-        self.by_login.setdefault(login, set()).add(woken)
+        self.by_person.setdefault(person, set()).add(woken)
         try:
             yield woken
         finally:
-            watching = self.by_login[login]
+            watching = self.by_person[person]
             watching.discard(woken)
             if not watching:
-                del self.by_login[login]
+                del self.by_person[person]
 
-    def wake(self, connection, pid, channel, login: str) -> None:
-        """The listener's callback: the notification names one person."""
-        for woken in self.by_login.get(login, ()):
+    def wake(self, connection, pid, channel, person: str) -> None:
+        """The listener's callback: the notification names one person's account."""
+        for woken in self.by_person.get(int(person), ()):
             woken.set()
 
 
@@ -117,13 +117,13 @@ async def database(server):
 _admitted_until: dict[str, float] = {}  # a token's hash: when it is rechecked
 
 
-async def admit(token: str, login: str) -> bool:
+async def admit(token: str, claims: dict) -> bool:
     """Whether this instance admits the holder of this GitHub token, rechecked every
-    10 minutes. With GITHUB_ORG set, it admits that organisation's active members
-    and its guests. Without it, it admits anyone, and each check records the
-    organisations that installed peerbox where login is an active member, since
-    their members are each other's contacts; a GitHub failure there raises rather
-    than recording none."""
+    10 minutes; claims are GitHub's sub, login and name for them. With GITHUB_ORG
+    set, it admits that organisation's active members and its guests. Without it,
+    it admits anyone, and each check records the organisations that installed
+    peerbox where they are an active member, since their members are each other's
+    contacts; a GitHub failure there raises rather than recording none."""
     key = sha256(token.encode()).hexdigest()
     if _admitted_until.get(key, 0) > time.monotonic():
         return True
@@ -136,7 +136,7 @@ async def admit(token: str, login: str) -> bool:
         timeout=10,
     ) as github:
         if mailbox.GITHUB_ORG is None:
-            await _record_organisations(github, login)
+            await _record_organisations(github, claims)
             admitted = True
         else:
             admitted = await _member_or_guest(github, mailbox.GITHUB_ORG)
@@ -158,7 +158,7 @@ async def _member_or_guest(github: httpx2.AsyncClient, org: str) -> bool:
     return repo.status_code == 200 and repo.json().get("private") is True
 
 
-async def _record_organisations(github: httpx2.AsyncClient, login: str) -> None:
+async def _record_organisations(github: httpx2.AsyncClient, claims: dict) -> None:
     orgs = []
     page = "/user/installations?per_page=100"
     while page:
@@ -177,4 +177,5 @@ async def _record_organisations(github: httpx2.AsyncClient, login: str) -> None:
                     orgs.append(account["login"])
         page = installed.links.get("next", {}).get("url")
     async with get_db() as db:
-        await mailbox.record_memberships(db, login, orgs)
+        you = await mailbox.caller(db, claims)
+        await mailbox.record_memberships(db, you.person, orgs)

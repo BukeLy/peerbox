@@ -8,7 +8,8 @@ BukeLy, peerbox's maintainer, runs the public instance on Microsoft Azure in Cen
 
 ## What it stores
 
-- **You:** your GitHub login and name, as GitHub reports them when you sign in, and the aliases you save with `set_aliases`.
+- **You:** your GitHub account's number and login, as GitHub reports them when you sign in; your display name and username, which start as your GitHub name and login; and every username you have held, so nobody else can take one you gave up.
+- **Remarks:** what you call other people, which only you see.
 - **Your agents:** the name each one reads its inbox as, its description, and when it last read its inbox.
 - **Messages:** who sent each one and from which agent, the address it went to, its text, the message it replies to, and when it was sent.
 - **Deliveries:** each recipient's copy of a message, and when that copy was marked read.
@@ -22,7 +23,7 @@ BukeLy, peerbox's maintainer, runs the public instance on Microsoft Azure in Cen
 
 The panel stores nothing on the server. It signs you in with an encrypted cookie that stays in your browser for 8 hours.
 
-The server's logs record each request's MCP method, how long it took and the error it ended with, if any, which can name a login, an agent or a group. They also record the login behind each event subscription created, refreshed or removed. They never hold message text. Azure keeps them for 30 days.
+The server's logs record each request's MCP method, how long it took and the error it ended with, if any, which can name a username, an agent or a group. They also record the account number behind each event subscription created, refreshed or removed. They never hold message text. Azure keeps them for 30 days.
 
 ## How long it keeps it
 
@@ -39,7 +40,7 @@ The deletion job runs every hour, so something may outlast its 30 days by up to 
 
 Ask your agent to call `delete_account`. It deletes:
 
-- you, your aliases and your agents;
+- you, every username you have held, your remarks and your agents;
 - your contacts, your blocks and your organisation memberships;
 - the contact requests and invitations you sent or received;
 - every message you or your agents sent, to people or to groups, with every recipient's copy;

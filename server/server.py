@@ -5,6 +5,7 @@ import socket
 import time
 from base64 import b64decode, b64encode
 from contextlib import asynccontextmanager, suppress
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from mimetypes import guess_type
@@ -63,7 +64,7 @@ DirectAddress = Annotated[
     str,
     Field(
         pattern=rf"^[A-Za-z0-9-]+(/{AGENT})?$",
-        description='A login ("turing") or "login/agent" ("turing/review-bot")',
+        description='A username ("turing") or "username/agent" ("turing/review-bot")',
     ),
 ]
 Group = Annotated[
@@ -78,7 +79,8 @@ FromAgent = Annotated[
         "have read its inbox once. Leave it out to write as yourself."
     ),
 ]
-Alias = Annotated[str, Field(min_length=1, max_length=40)]
+# What anyone types to reach a person: a username, in any case.
+Username = Annotated[str, Field(pattern=r"^[A-Za-z0-9-]+$")]
 IN_A_GROUP = (
     "In a group (a message whose `to` is a #id), answer only what asks you, and send "
     "no acknowledgements."
@@ -112,7 +114,7 @@ DESTRUCTIVE = ToolAnnotations(destructive_hint=True, open_world_hint=False)
 async def admitted(ctx: AuthContext) -> bool:
     """AuthMiddleware's check: a signed-in caller this instance admits."""
     return ctx.token is not None and await instance.admit(
-        ctx.token.token, ctx.token.claims["login"]
+        ctx.token.token, ctx.token.claims
     )
 
 
@@ -164,10 +166,10 @@ class OAuthStore(PostgreSQLStore):
 
 
 def limit_key(ctx) -> str:
-    """Whose rate limit a request counts against: the signed-in login, or for a
-    signed-out caller its address, so one caller can't use up everyone's."""
+    """Whose rate limit a request counts against: the signed-in GitHub account, or
+    for a signed-out caller its address, so one caller can't use up everyone's."""
     if token := get_access_token():
-        return token.claims.get("login", "anonymous")
+        return f"github:{token.claims.get('sub')}"
     try:
         request = get_http_request()
     except RuntimeError:
@@ -234,9 +236,7 @@ async def me(
 ) -> mailbox.Address:
     """The caller's address: them, or one of their agents, which must have read its
     inbox once."""
-    return await mailbox.caller(
-        db, token.claims["login"], token.claims.get("name"), agent
-    )
+    return await mailbox.caller(db, token.claims, agent)
 
 
 @mcp.tool(annotations=READ)
@@ -244,36 +244,59 @@ async def whoami(
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
-    """Show who you are signed in as and the names your contacts can use to reach
-    you.
-
-    If setup_needed is true, ask your user what people usually call them
-    (nicknames, short names, names in other languages) and save the answers
-    with set_aliases.
-    """
-    you = await mailbox.person(db, (await me(db, token)).login)
-    return you | {"setup_needed": not you["aliases"]}
+    """Show who you are signed in as: your username, which others write to, your
+    display name, and the GitHub login you signed in with."""
+    return await mailbox.person(db, (await me(db, token)).person)
 
 
 @mcp.tool(annotations=IDEMPOTENT_WRITE)
-async def set_aliases(
-    aliases: Annotated[
-        list[Alias],
+async def set_profile(
+    username: Annotated[
+        str | SkipJsonSchema[None],
         Field(
-            max_length=10,
-            description='The names your contacts may call you, such as "Prof" or '
-            '"Alan"',
+            pattern=r"^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$",
+            max_length=39,
+            description="Your new username: letters, digits and single hyphens",
+        ),
+    ] = None,
+    name: Annotated[
+        str | SkipJsonSchema[None],
+        Field(min_length=1, max_length=100, description="Your new display name"),
+    ] = None,
+    token: AccessToken = CurrentAccessToken(),
+    db: Connection = Depends(instance.get_db),
+) -> dict:
+    """Change your username, display name or both. Ask your user first.
+
+    A username changes once a year. The old one then reaches no one, and stays
+    yours to take back; nobody else can have it.
+    """
+    you = await me(db, token)
+    return await mailbox.set_profile(db, you, username, name)
+
+
+@mcp.tool(annotations=IDEMPOTENT_WRITE)
+async def set_remark(
+    username: Annotated[Username, Field(description='Their username ("turing")')],
+    remark: Annotated[
+        str,
+        Field(
+            max_length=16,
+            description='What you call them ("Prof"); empty to remove it',
         ),
     ],
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
-    """Replace the names your contacts can use to reach you, such as nicknames.
+    """Save what your user calls someone, so you can find them by it in contacts.
+    Only you see it, and each remark names one person.
 
-    Your GitHub login and name always work and do not need to be listed.
+    Save one only when your user tells you, or confirms who they meant.
     """
-    login = (await me(db, token)).login
-    return {"login": login, "aliases": await mailbox.set_aliases(db, login, aliases)}
+    you = await me(db, token)
+    other = await mailbox.resolve(db, username)
+    await mailbox.set_remark(db, you.person, other, remark)
+    return {"username": str(other), "remark": remark.strip()}
 
 
 @mcp.tool(annotations=READ)
@@ -281,15 +304,16 @@ async def contacts(
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
-    """List your contacts, the names they go by, their agents, and the groups you
-    are in with their members.
+    """List your contacts with their agents, the groups you are in with their
+    members, and your remarks: what your user calls people, by username.
 
-    Use it to turn a name like "Prof" into a send address: `login` for the
-    person, `login/agent` for one of their agents, a group's "#id" for everyone
-    in it. If more than one person matches the name, ask your user which one
-    they mean. To reach someone who is not listed, ask with add_contact.
+    Use it to turn a name like "Prof" into a send address: a username for the
+    person, `username/agent` for one of their agents, a group's "#id" for
+    everyone in it. If no remark, username or display name fits, or more than
+    one does, ask your user who they mean. To reach someone who is not listed,
+    ask with add_contact.
     """
-    return await mailbox.contacts_and_groups(db, (await me(db, token)).login)
+    return await mailbox.contacts_and_groups(db, (await me(db, token)).person)
 
 
 @mcp.tool(annotations=WRITE)
@@ -297,9 +321,9 @@ async def send(
     to: Annotated[
         DirectAddress | Group,
         Field(
-            description='A login from contacts ("turing"), "login/agent" for one of '
-            'their agents ("turing/review-bot"), or a group\'s "#id". Never guess '
-            "an address."
+            description='A username from contacts ("turing"), "username/agent" for '
+            'one of their agents ("turing/review-bot"), or a group\'s "#id". Never '
+            "guess an address."
         ),
     ],
     text: Annotated[
@@ -326,7 +350,7 @@ async def send(
     """
     you = await me(db, token, from_agent)
     return await mailbox.send(
-        db, you, mailbox.Address.parse(to), text, reply_to, attachments
+        db, you, await mailbox.resolve(db, to), text, reply_to, attachments
     )
 
 
@@ -353,7 +377,7 @@ async def inbox(
     shows it to you. Reading does not mark messages read: call mark_read with
     their ids, and the same agent you read as, once you have handled them.
     """
-    you = mailbox.Address((await me(db, token)).login, agent)
+    you = replace(await me(db, token), agent=agent)
     return {"notice": NOTICE} | await mailbox.inbox(db, you, limit)
 
 
@@ -410,7 +434,7 @@ async def invite(
     contact's is invited and joins when they accept."""
     you = await me(db, token, from_agent)
     status = await mailbox.invite(
-        db, you, mailbox.Address.parse(group), mailbox.Address.parse(address)
+        db, you, await mailbox.resolve(db, group), await mailbox.resolve(db, address)
     )
     return {"group": group, "address": address, "status": status}
 
@@ -421,9 +445,9 @@ async def leave(
     address: Annotated[
         DirectAddress | SkipJsonSchema[None],
         Field(
-            description='The address to remove: a login ("turing") or "login/agent" '
-            '("turing/review-bot"). Leave it out to leave as the address you write '
-            "from."
+            description='The address to remove: a username ("turing") or '
+            '"username/agent" ("turing/review-bot"). Leave it out to leave as the '
+            "address you write from."
         ),
     ] = None,
     from_agent: FromAgent = None,
@@ -438,17 +462,14 @@ async def leave(
     is deleted once its messages are, 30 days after they were sent.
     """
     you = await me(db, token, from_agent)
-    member = mailbox.Address.parse(address) if address else you
-    await mailbox.leave(db, you, mailbox.Address.parse(group), member)
+    member = await mailbox.resolve(db, address) if address else you
+    await mailbox.leave(db, you, await mailbox.resolve(db, group), member)
     return {"group": group, "removed": str(member)}
 
 
 @mcp.tool(annotations=WRITE)
 async def add_contact(
-    login: Annotated[
-        str,
-        Field(pattern=r"^[A-Za-z0-9-]+$", description='Their GitHub login ("turing")'),
-    ],
+    username: Annotated[Username, Field(description='Their username ("turing")')],
     greeting: Annotated[
         str | SkipJsonSchema[None],
         Field(max_length=500, description="Tells them who you are"),
@@ -461,11 +482,14 @@ async def add_contact(
     other. Ask your user first.
 
     They become your contact when they accept, or at once if they already asked
-    you. Adding someone you removed lets them write to you again.
+    you. Adding someone you removed lets them write to you again. Anyone may take
+    any free username, so tell your user the GitHub login this returns.
     """
     you = await me(db, token, from_agent)
-    status = await mailbox.add_contact(db, you, login, greeting)
-    return {"login": login, "status": status}
+    other = await mailbox.resolve(db, username)
+    status = await mailbox.add_contact(db, you, other, greeting)
+    shown = await mailbox.person(db, other.person)
+    return {"username": str(other), "github": shown["github"], "status": status}
 
 
 @mcp.tool(annotations=WRITE)
@@ -495,20 +519,17 @@ async def answer(
 
 @mcp.tool(annotations=DESTRUCTIVE)
 async def remove_contact(
-    login: Annotated[
-        str,
-        Field(
-            pattern=r"^[A-Za-z0-9-]+$",
-            description='The contact\'s GitHub login ("turing")',
-        ),
+    username: Annotated[
+        Username, Field(description='The contact\'s username ("turing")')
     ],
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
     """Remove a contact and block them, so neither of you can write to the other.
     Ask your user first. add_contact undoes it."""
-    await mailbox.remove_contact(db, (await me(db, token)).login, login)
-    return {"removed": login}
+    other = await mailbox.resolve(db, username)
+    await mailbox.remove_contact(db, (await me(db, token)).person, other)
+    return {"removed": str(other)}
 
 
 async def revoke_grant(token: str) -> bool:
@@ -531,18 +552,18 @@ async def delete_account(
 ) -> dict:
     """Delete your peerbox account and sign out. Only when your user asks for it.
 
-    Deletes your agents, contacts, blocks, organisation memberships, the contact
-    requests and invitations you sent or received, every message you or your
-    agents sent (to groups too), every message sent directly to you or your
-    agents, your copies of group messages, and your attachments. Groups you own
-    pass to the member that joined first. Signing in again starts a new, empty
-    account.
+    Deletes your usernames, agents, contacts, blocks, remarks, organisation
+    memberships, the contact requests and invitations you sent or received,
+    every message you or your agents sent (to groups too), every message sent
+    directly to you or your agents, your copies of group messages, and your
+    attachments. Groups you own pass to the member that joined first. Signing in
+    again starts a new, empty account.
     """
-    login = (await me(db, token)).login
+    you = await me(db, token)
     # Before the bucket's deletes, so one of them failing can't skip it.
     signed_out = await revoke_grant(token.token)
-    await mailbox.delete_account(db, login)
-    return {"deleted": login, "signed_out": signed_out}
+    await mailbox.delete_account(db, you.person)
+    return {"deleted": you.username, "signed_out": signed_out}
 
 
 class ChatGPTFile(BaseModel):
@@ -630,8 +651,8 @@ async def open_attachment(
     db: Connection = Depends(instance.get_db),
 ) -> Image | EmbeddedResource:
     """Open an attachment of a message you sent or received, to see what it holds."""
-    login = (await me(db, token)).login
-    name, mime, data = await mailbox.open_attachment(db, login, id)
+    person = (await me(db, token)).person
+    name, mime, data = await mailbox.open_attachment(db, person, id)
     if mime in SHOWN_AS_IMAGES:
         return Image(data=data, format=mime.removeprefix("image/"))
     uri = f"attachment://{id}/{name}"
@@ -785,7 +806,7 @@ class UnsubscribeResult(Result):
 
 class Subscription(BaseModel):
     id: str
-    login: str
+    person: int
     url: str
     agent: str | None
     secrets: list[str]
@@ -812,16 +833,18 @@ async def save(subscription: Subscription) -> None:
         )
 
 
-async def events_principal() -> str:
+async def events_principal() -> int:
+    """The account of the signed-in person subscribing."""
     token = get_access_token()
-    if token is None or not await instance.admit(token.token, token.claims["login"]):
+    if token is None or not await instance.admit(token.token, token.claims):
         raise MCPError(FORBIDDEN, "Only people this peerbox admits can subscribe")
-    return token.claims["login"]
+    async with instance.get_db() as db:
+        return (await mailbox.caller(db, token.claims)).person
 
 
-def subscription_id(login: str, params: UnsubscribeParams) -> str:
+def subscription_id(person: int, params: UnsubscribeParams) -> str:
     key = [
-        login,
+        person,
         params.delivery.url,
         params.name,
         # exclude_defaults keeps the ids of subscriptions made before `reply` existed.
@@ -981,7 +1004,7 @@ class MessageEvents(ServerExtension):
 
     def __init__(self) -> None:
         self.subscriptions: dict[str, Subscription] = {}
-        self.verified: set[tuple[str, str]] = set()
+        self.verified: set[tuple[int, str]] = set()
         self.pumps: dict[str, asyncio.Task] = {}  # same keys as subscriptions
 
     def methods(self) -> tuple[MethodBinding, ...]:
@@ -1057,12 +1080,12 @@ class MessageEvents(ServerExtension):
     async def subscribe(
         self, context: ServerRequestContext, params: SubscribeParams
     ) -> SubscribeResult:
-        login = await events_principal()
+        person = await events_principal()
         if params.name != MESSAGE_RECEIVED:
             raise MCPError(
                 NOT_FOUND, f"No event named {params.name}", {"kind": "event"}
             )
-        sub_id = subscription_id(login, params)
+        sub_id = subscription_id(person, params)
         ttl = timedelta(milliseconds=params.ttl_ms) if params.ttl_ms else MAX_TTL
         expires_at = datetime.now(UTC) + min(max(ttl, MIN_TTL), MAX_TTL)
         subscription = self.subscriptions.get(sub_id)
@@ -1073,7 +1096,7 @@ class MessageEvents(ServerExtension):
             )
             subscription.expires_at = expires_at
             await save(subscription)
-            logger.info("Subscription %s of %s refreshed", sub_id, login)
+            logger.info("Subscription %s of %s refreshed", sub_id, person)
             return SubscribeResult(
                 id=sub_id,
                 refresh_before=expires_at,
@@ -1088,22 +1111,22 @@ class MessageEvents(ServerExtension):
             )
         subscription = Subscription(
             id=sub_id,
-            login=login,
+            person=person,
             url=params.delivery.url,
             agent=params.arguments.agent,
             secrets=[params.delivery.secret],
             position=position,
             expires_at=expires_at,
         )
-        if (login, subscription.url) not in self.verified:
+        if (person, subscription.url) not in self.verified:
             await verify(subscription)
-            self.verified.add((login, subscription.url))
+            self.verified.add((person, subscription.url))
         await save(subscription)
         self.start(subscription)
         logger.info(
             "Subscription %s of %s created (agent %s, reply %s)",
             sub_id,
-            login,
+            person,
             subscription.agent,
             params.arguments.reply,
         )
@@ -1117,8 +1140,8 @@ class MessageEvents(ServerExtension):
     async def unsubscribe(
         self, context: ServerRequestContext, params: UnsubscribeParams
     ) -> UnsubscribeResult:
-        login = await events_principal()
-        sub_id = subscription_id(login, params)
+        person = await events_principal()
+        sub_id = subscription_id(person, params)
         subscription = self.subscriptions.pop(sub_id, None)
         if subscription is None:
             raise MCPError(NOT_FOUND, "No such subscription", {"kind": "subscription"})
@@ -1128,14 +1151,14 @@ class MessageEvents(ServerExtension):
         await asyncio.wait([pump])
         subscription.expires_at = datetime.now(UTC)
         await save(subscription)
-        logger.info("Subscription %s of %s removed", sub_id, login)
+        logger.info("Subscription %s of %s removed", sub_id, person)
         return UnsubscribeResult()
 
     async def pump(self, subscription: Subscription) -> None:
         """Deliver the subscription's new deliveries in order until it expires."""
-        reader = mailbox.Address(subscription.login, subscription.agent)
+        reader = mailbox.Address(subscription.person, subscription.agent)
         try:
-            with instance.waiters.watch(subscription.login) as woken:
+            with instance.waiters.watch(subscription.person) as woken:
                 while datetime.now(UTC) < subscription.expires_at:
                     woken.clear()
                     try:

@@ -29,10 +29,10 @@ FILES = {path.name: path for path in (HERE / "panel").iterdir()} | {
 }
 
 
-async def changes(login: str):
-    """Server-sent events telling login's page to refetch: one whenever something of
-    theirs changes, such as a message or request sent, answered or read."""
-    with instance.waiters.watch(login) as woken:
+async def changes(person: int):
+    """Server-sent events telling a person's page to refetch: one whenever something
+    of theirs changes, such as a message or request sent, answered or read."""
+    with instance.waiters.watch(person) as woken:
         while True:
             await woken.wait()
             woken.clear()
@@ -42,14 +42,19 @@ async def changes(login: str):
 def install(mcp) -> None:
     """Add the panel's routes to mcp."""
 
-    def viewer(request: Request) -> str | None:
-        """The signed-in person's login, from the session cookie."""
+    async def viewer(request: Request) -> int | None:
+        """The signed-in person's account id, from the session cookie, while the
+        account exists."""
         try:
-            return SESSION_KEY.decrypt(
-                request.cookies.get("peerbox_session", ""), ttl=SESSION_SECONDS
-            ).decode()
+            person = int(
+                SESSION_KEY.decrypt(
+                    request.cookies.get("peerbox_session", ""), ttl=SESSION_SECONDS
+                )
+            )
         except InvalidToken:
             return None
+        async with instance.get_db() as db:
+            return person if await mailbox.person(db, person) else None
 
     def signed_out() -> Response:
         return Response(
@@ -104,15 +109,23 @@ def install(mcp) -> None:
                 "https://api.github.com/user",
                 headers={"Authorization": f"Bearer {token}"},
             )
-        login = user.raise_for_status().json()["login"]
-        if not await instance.admit(token, login):
+        profile = user.raise_for_status().json()
+        # The claims an MCP sign-in carries, so both find the same account.
+        claims = {
+            "sub": str(profile["id"]),
+            "login": profile["login"],
+            "name": profile.get("name"),
+        }
+        if not await instance.admit(token, claims):
             return Response(
-                f"{login} is not admitted to this peerbox.", status_code=403
+                f"{claims['login']} is not admitted to this peerbox.", status_code=403
             )
+        async with instance.get_db() as db:
+            you = await mailbox.caller(db, claims)
         response = RedirectResponse("/", status_code=303)
         response.set_cookie(
             "peerbox_session",
-            SESSION_KEY.encrypt(login.encode()).decode(),
+            SESSION_KEY.encrypt(str(you.person).encode()).decode(),
             max_age=SESSION_SECONDS,
             **COOKIE,
         )
@@ -125,39 +138,42 @@ def install(mcp) -> None:
         return response
 
     def api(read):
-        """A JSON route that calls read(db, login, request) for the signed-in person."""
+        """A JSON route that calls read(db, person, request) for the signed-in
+        person's account."""
 
         async def route(request: Request) -> Response:
-            login = viewer(request)
-            if login is None:
+            person = await viewer(request)
+            if person is None:
                 return signed_out()
             async with instance.get_db() as db:
-                data = await read(db, login, request)
+                data = await read(db, person, request)
             return Response(to_json(data), media_type="application/json")
 
         return route
 
-    async def me(db, login: str, request: Request) -> dict:
-        return {"login": login} | await mailbox.contacts_and_groups(db, login)
+    async def me(db, person: int, request: Request) -> dict:
+        return await mailbox.person(db, person) | await mailbox.contacts_and_groups(
+            db, person
+        )
 
-    async def conversations(db, login: str, request: Request) -> dict:
-        return await mailbox.conversations(db, login)
+    async def conversations(db, person: int, request: Request) -> dict:
+        return await mailbox.conversations(db, person)
 
-    async def history(db, login: str, request: Request) -> dict:
+    async def history(db, person: int, request: Request) -> dict:
         before = request.query_params.get("before", "")
         return await mailbox.history(
             db,
-            login,
+            person,
             request.path_params["key"],
             int(before) if before.isdecimal() else None,
         )
 
     async def stream(request: Request) -> Response:
         """Tells the page to refetch whenever something of its person's changes."""
-        login = viewer(request)
-        if login is None:
+        person = await viewer(request)
+        if person is None:
             return signed_out()
-        return EventSourceResponse(changes(login), ping=PING_SECONDS)
+        return EventSourceResponse(changes(person), ping=PING_SECONDS)
 
     routes = [
         ("/", "GET", page),
