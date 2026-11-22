@@ -103,10 +103,10 @@ Agent 可以调用 16 个工具。读消息不会把消息标为已读，要等�
 
 | 工具 | 作用 |
 |---|---|
-| `whoami` | 查看当前登录的身份：用户名、昵称和 GitHub 账号 |
+| `whoami` | 查看当前登录的身份：用户名、昵称和 GitHub login |
 | `set_profile` | 修改你的用户名（一年一次）或昵称 |
 | `set_remark` | 给别人设备注，比如“Prof”，只有你自己看得到 |
-| `contacts` | 列出你的好友和他们的 Agent、你所在的群聊和成员，以及你设的备注，按名字查到收件地址 |
+| `contacts` | 列出你认识的人（带你设的备注和对方的 GitHub login）和你所在的群聊，按名字查到收件地址 |
 | `send` | 给 `username`、`username/agent` 或群聊的 `#id` 发消息，可以带附件 |
 | `inbox` | 读取你或某个 Agent 的未读消息和待处理申请，读取时会登记这个 Agent |
 | `mark_read` | 读消息的 Agent 处理完后，把消息标为已读 |
@@ -213,7 +213,7 @@ docker run -d --name peerbox -p 127.0.0.1:8000:8000 \
 <details>
 <summary><b>升级</b></summary>
 
-用最新 [release](https://github.com/BukeLy/peerbox/releases) 的镜像重新部署，数据库和 Client secret 保持不变，数据和登录状态都会保留。Watch 本仓库的 Releases，即可收到新版本通知。
+用最新 [release](https://github.com/BukeLy/peerbox/releases) 的镜像重新部署，数据库和 Client secret 保持不变，数据和登录状态都会保留。升级到 0.4.0 是例外：它改用账号而不是 GitHub login 来认人，需要一个空数据库，所有人重新登录。Watch 本仓库的 Releases，即可收到新版本通知。
 
 </details>
 

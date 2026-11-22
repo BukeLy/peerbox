@@ -33,6 +33,7 @@ os.environ.setdefault("S3_ACCESS_KEY_ID", "minioadmin")
 os.environ.setdefault("S3_SECRET_ACCESS_KEY", "minioadmin")
 os.environ.setdefault("S3_REGION", "us-east-1")
 
+import accounts
 import bucket
 import instance
 import mailbox
@@ -116,9 +117,9 @@ def signed_in(login: str, sub: str | None = None) -> AccessToken:
     )
 
 
-async def person(db, login: str) -> int:
+async def account_id(db, login: str) -> int:
     """The account id of whoever signs in to GitHub as login."""
-    return (await mailbox.caller(db, signed_in(login).claims)).person
+    return (await accounts.sign_in(db, signed_in(login).claims)).person
 
 
 async def test_a_contact_receives_and_clears_a_message(db):
@@ -197,24 +198,104 @@ async def test_deleting_an_account_frees_its_usernames(db, monkeypatch):
     assert changed["username"] == "alan"
 
 
+async def test_sign_ins_at_once_share_an_account_or_take_the_next_username(db):
+    other = await asyncpg.connect(os.environ["DATABASE_URL"])
+    try:
+        same = await asyncio.gather(
+            accounts.sign_in(db, signed_in("turing", sub="1").claims),
+            accounts.sign_in(other, signed_in("turing", sub="1").claims),
+        )
+        two = await asyncio.gather(
+            accounts.sign_in(db, signed_in("church", sub="2").claims),
+            accounts.sign_in(other, signed_in("church", sub="3").claims),
+        )
+    finally:
+        await other.close()
+    assert same[0] == same[1]
+    assert sorted(you.username for you in two) == ["church", "church-2"]
+
+
+async def test_a_taken_long_login_still_gives_a_username_of_39_characters(db):
+    for login in ("a" * 38 + "b", "b" * 36 + "-cd"):
+        await whoami(token=signed_in(login, sub=f"{login}-1"), db=db)
+        await whoami(token=signed_in(login, sub=f"{login}-2"), db=db)
+    usernames = await db.fetch("select username from users order by id")
+    assert [row["username"] for row in usernames] == [
+        "a" * 38 + "b",
+        "a" * 37 + "-2",
+        "b" * 36 + "-cd",
+        "b" * 36 + "-2",
+    ]
+
+
+async def test_two_username_changes_at_once_make_one(db):
+    turing = signed_in("turing")
+    await whoami(token=turing, db=db)
+    other = await asyncpg.connect(os.environ["DATABASE_URL"])
+    try:
+        changes = await asyncio.gather(
+            set_profile(username="alan", token=turing, db=db),
+            set_profile(username="prof", token=turing, db=other),
+            return_exceptions=True,
+        )
+    finally:
+        await other.close()
+    assert sum(isinstance(change, ToolError) for change in changes) == 1
+
+
+async def remarks(token, db) -> dict[str, str]:
+    """The remarks the signed-in person gave, by username."""
+    people = (await contacts(token=token, db=db))["people"]
+    return {p["username"]: p["remark"] for p in people if p["remark"]}
+
+
 async def test_a_remark_is_private_names_one_person_and_outlives_removal(db, public):
     turing, church = signed_in("turing"), signed_in("church")
-    await mailbox.record_memberships(db, await person(db, "turing"), ["acme"])
-    await mailbox.record_memberships(db, await person(db, "church"), ["acme"])
+    await mailbox.record_memberships(db, await account_id(db, "turing"), ["acme"])
+    await mailbox.record_memberships(db, await account_id(db, "church"), ["acme"])
     await whoami(token=signed_in("kleene"), db=db)
 
     await set_remark("Turing", "Prof", token=church, db=db)
     await set_remark("kleene", "Stephen", token=church, db=db)  # not a contact
-    remarks = {"turing": "Prof", "kleene": "Stephen"}
-    assert (await contacts(token=church, db=db))["remarks"] == remarks
-    assert (await contacts(token=turing, db=db))["remarks"] == {}
+    given = {"turing": "Prof", "kleene": "Stephen"}
+    assert await remarks(church, db) == given
+    assert await remarks(turing, db) == {}
     with pytest.raises(ToolError, match="already call turing 'prof'"):
         await set_remark("kleene", "prof", token=church, db=db)
 
     await remove_contact("turing", token=church, db=db)
-    assert (await contacts(token=church, db=db))["remarks"] == remarks
-    await set_remark("turing", "", token=church, db=db)
-    assert (await contacts(token=church, db=db))["remarks"] == {"kleene": "Stephen"}
+    assert await remarks(church, db) == given
+    cleared = await set_remark("turing", " ", token=church, db=db)
+    assert cleared == {"username": "turing", "remark": None}
+    assert await remarks(church, db) == {"kleene": "Stephen"}
+
+
+async def test_contacts_lists_the_members_of_your_groups_who_are_no_contacts(
+    db, public
+):
+    turing, church = signed_in("turing"), signed_in("church")
+    await mailbox.record_memberships(
+        db, await account_id(db, "turing"), ["acme", "recursion"]
+    )
+    await mailbox.record_memberships(db, await account_id(db, "church"), ["acme"])
+    await mailbox.record_memberships(db, await account_id(db, "kleene"), ["recursion"])
+    group = (await create_group("logic", token=turing, db=db))["group"]
+    await join(db, group, turing, "church", "kleene")
+
+    people = (await contacts(token=church, db=db))["people"]
+    assert [(p["username"], p["contact"]) for p in people] == [
+        ("church", True),
+        ("kleene", False),
+        ("turing", True),
+    ]
+    assert people[1] == {
+        "username": "kleene",
+        "name": "Kleene",
+        "github": "kleene",
+        "remark": None,
+        "contact": False,
+        "agents": [],
+    }
 
 
 async def test_message_to_an_agent_waits_in_that_agents_inbox(db):
@@ -296,7 +377,9 @@ async def woken(db, change, expected: set[str], *bystanders: str) -> set[str]:
     expected ones woke. Client(server.mcp) must be open: its listener hears them."""
     with ExitStack() as stack:
         events = {
-            login: stack.enter_context(instance.waiters.watch(await person(db, login)))
+            login: stack.enter_context(
+                instance.waiters.watch(await account_id(db, login))
+            )
             for login in (*expected, *bystanders)
         }
         await change
@@ -308,7 +391,7 @@ async def woken(db, change, expected: set[str], *bystanders: str) -> set[str]:
 
 async def test_a_change_wakes_only_the_people_it_involves(db):
     turing, church = signed_in("turing"), signed_in("church")
-    ids = [await person(db, login) for login in ("turing", "church", "kleene")]
+    ids = [await account_id(db, login) for login in ("turing", "church", "kleene")]
     watch = instance.waiters.watch
     async with Client(server.mcp):  # its listener hears the notifications
         with watch(ids[0]) as to, watch(ids[1]) as by, watch(ids[2]) as other:
@@ -386,7 +469,7 @@ def webhook(monkeypatch):
 
     async def signed_in_as_turing():
         async with instance.get_db() as db:
-            return await person(db, "turing")
+            return await account_id(db, "turing")
 
     monkeypatch.setattr(server, "post_webhook", post)
     monkeypatch.setattr(server, "events_principal", signed_in_as_turing)
@@ -641,11 +724,7 @@ async def test_owner_address_hands_over_on_leaving(db):
     await leave(group, "kleene", from_agent="bot", token=church, db=db)
     # church, writing as no agent, removes its own agent's address
     await leave(group, "church/bot", token=church, db=db)
-    assert await contacts(token=church, db=db) == {
-        "people": ANY,
-        "groups": [],
-        "remarks": {},
-    }
+    assert await contacts(token=church, db=db) == {"people": ANY, "groups": []}
     # nobody is left and nothing was said, so the next expiry deletes the group
     await mailbox.expire(db)
     assert await db.fetchval("select count(*) from groups") == 0
@@ -672,7 +751,7 @@ async def test_an_emptied_group_keeps_its_messages_until_they_expire(db):
     await leave(group, token=turing, db=db)
 
     await mailbox.expire(db)
-    with browser(await person(db, "church")) as page:
+    with browser(await account_id(db, "church")) as page:
         [talk] = page.get("/api/conversations").json()["conversations"]
         assert (talk["key"], talk["name"]) == (group, "compilers")
         [kept] = page.get(f"/api/conversations/{quote(group)}").json()["messages"]
@@ -755,7 +834,8 @@ async def test_an_invitation_is_answered_only_as_the_address_it_invites(db):
 
 
 async def people(token, db) -> list[str]:
-    return [p["username"] for p in (await contacts(token=token, db=db))["people"]]
+    people = (await contacts(token=token, db=db))["people"]
+    return [p["username"] for p in people if p["contact"]]
 
 
 async def test_a_stranger_writes_once_their_request_is_accepted(db, public):
@@ -835,8 +915,8 @@ async def test_asking_someone_who_asked_you_makes_contacts_at_once(db, public):
 
 async def test_removing_a_contact_blocks_them_despite_a_shared_organisation(db, public):
     turing, church = signed_in("turing"), signed_in("church")
-    await mailbox.record_memberships(db, await person(db, "turing"), ["acme"])
-    await mailbox.record_memberships(db, await person(db, "church"), ["acme"])
+    await mailbox.record_memberships(db, await account_id(db, "turing"), ["acme"])
+    await mailbox.record_memberships(db, await account_id(db, "church"), ["acme"])
     await send("turing", "hi", token=church, db=db)
     added = await add_contact("turing", token=church, db=db)
     assert added["status"] == "already your contact"
@@ -854,8 +934,8 @@ async def test_removing_a_contact_blocks_them_despite_a_shared_organisation(db, 
 
 async def test_an_invited_contact_joins_on_accepting(db, public):
     turing, church = signed_in("turing"), signed_in("church")
-    await mailbox.record_memberships(db, await person(db, "turing"), ["acme"])
-    await mailbox.record_memberships(db, await person(db, "church"), ["acme"])
+    await mailbox.record_memberships(db, await account_id(db, "turing"), ["acme"])
+    await mailbox.record_memberships(db, await account_id(db, "church"), ["acme"])
     await whoami(token=signed_in("kleene"), db=db)
     await inbox(agent="bot", token=church, db=db)
     group = (await create_group("compilers", token=turing, db=db))["group"]
@@ -930,11 +1010,11 @@ async def test_deleting_an_account_wakes_who_saw_its_copies_in_groups_it_left(
     # church shares an organisation with turing only: kleene and post are no
     # contacts of church's.
     await mailbox.record_memberships(
-        db, await person(db, "turing"), ["lambda", "recursion"]
+        db, await account_id(db, "turing"), ["lambda", "recursion"]
     )
-    await mailbox.record_memberships(db, await person(db, "church"), ["lambda"])
+    await mailbox.record_memberships(db, await account_id(db, "church"), ["lambda"])
     for login in ("kleene", "post"):
-        await mailbox.record_memberships(db, await person(db, login), ["recursion"])
+        await mailbox.record_memberships(db, await account_id(db, login), ["recursion"])
     turing, church = signed_in("turing"), signed_in("church")
     group = (await create_group("logic", token=turing, db=db))["group"]
     await join(db, group, turing, "church", "kleene", "post")
@@ -996,7 +1076,7 @@ async def test_anyone_is_admitted_publicly_with_their_installed_organisations(
 async def test_a_github_outage_keeps_the_recorded_organisations(
     db, monkeypatch, public
 ):
-    await mailbox.record_memberships(db, await person(db, "turing"), ["acme"])
+    await mailbox.record_memberships(db, await account_id(db, "turing"), ["acme"])
     down = httpx2.MockTransport(lambda request: httpx2.Response(503))
     client = httpx2.AsyncClient
     monkeypatch.setattr(
@@ -1288,6 +1368,27 @@ def test_each_signed_out_address_has_its_own_rate_limit(monkeypatch):
         assert listed(page, "203.0.113.2")
 
 
+async def test_the_panel_refuses_an_earlier_session_and_a_deleted_account(
+    db, monkeypatch
+):
+    turing = await account_id(db, "turing")
+    # Sessions before accounts held a login under another key; a numeric login
+    # must not read as someone's account id.
+    earlier = instance.fernet("peerbox-panel-session").encrypt(str(turing).encode())
+    with browser() as page:
+        page.cookies.set("peerbox_session", earlier.decode())
+        assert page.get("/api/me").status_code == 401
+    revoked = httpx2.MockTransport(lambda request: httpx2.Response(204))
+    client = httpx2.AsyncClient
+    monkeypatch.setattr(
+        httpx2, "AsyncClient", lambda **kwargs: client(transport=revoked, **kwargs)
+    )
+    with browser(turing) as page:
+        assert page.get("/api/me").status_code == 200
+        await delete_account(token=signed_in("turing"), db=db)
+        assert page.get("/api/me").status_code == 401
+
+
 def test_the_panel_api_needs_a_session():
     with browser() as page:
         assert page.get("/").status_code == 200
@@ -1315,7 +1416,7 @@ async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
     await mark_read([asked["id"]], agent="bot", token=turing, db=db)
     await send("turing", "lunch?", token=church, db=db)
 
-    with browser(await person(db, "turing")) as page:
+    with browser(await account_id(db, "turing")) as page:
         listed = page.get("/api/conversations").json()
         [talk] = listed["conversations"]
         assert (talk["key"], talk["sides"], talk["waiting"]) == (
@@ -1338,7 +1439,7 @@ async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
         assert (await client.get(file["url"])).content == b"step 1"
     expires = datetime.fromisoformat(file["url_expires_at"])
     assert abs(expires - in_an_hour) < timedelta(seconds=5)
-    with browser(await person(db, "church")) as page:
+    with browser(await account_id(db, "church")) as page:
         keys = [
             c["key"] for c in page.get("/api/conversations").json()["conversations"]
         ]
@@ -1357,7 +1458,7 @@ async def test_two_of_your_agents_talk_in_one_conversation(db):
     await send(
         "turing/claude-code", "412 passed", from_agent="codex", token=turing, db=db
     )
-    with browser(await person(db, "turing")) as page:
+    with browser(await account_id(db, "turing")) as page:
         [talk] = page.get("/api/conversations").json()["conversations"]
         assert (talk["key"], talk["sides"]) == (
             "turing/codex",
@@ -1374,7 +1475,7 @@ async def test_a_group_conversation_shows_every_members_messages(db):
     await send(group, "standup at ten", token=turing, db=db)
     agreed = await send(group, "agreed", token=church, db=db)
 
-    with browser(await person(db, "kleene")) as page:
+    with browser(await account_id(db, "kleene")) as page:
         [talk] = page.get("/api/conversations").json()["conversations"]
         assert (talk["key"], talk["name"], talk["waiting"]) == (group, "compilers", 2)
         messages = page.get(f"/api/conversations/{quote(group)}").json()["messages"]
@@ -1393,7 +1494,7 @@ async def test_the_stream_says_when_something_changed(db):
     turing, church = signed_in("turing"), signed_in("church")
     await whoami(token=turing, db=db)
     async with Client(server.mcp):  # its listener hears what is sent
-        stream = panel.changes(await person(db, "turing"))
+        stream = panel.changes(await account_id(db, "turing"))
         changed = asyncio.create_task(anext(stream))
         await asyncio.sleep(0.1)  # the stream starts listening
         await send("turing", "hi", token=church, db=db)

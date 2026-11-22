@@ -111,7 +111,7 @@ Teammates are registered the first time they sign in; nobody needs an account ma
 
 ## Updating
 
-Deploy the newer release's image tag the same way. Data and sign-ins carry over.
+Deploy the newer release's image tag the same way. Data and sign-ins carry over, except into 0.4.0: it keys people by account instead of GitHub login, so give it an empty database (drop the old one's tables, or create a new one), and everyone signs in again.
 
 ## Guests
 

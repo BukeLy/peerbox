@@ -45,7 +45,7 @@
     walk(marked.lexer(text));
     return out.join("").replace(/\s+/g, " ").trim();
   };
-  const data = { me: null, name: null, people: {}, agents: {}, groups: {}, remarks: {}, convs: null, open: null };
+  const data = { me: null, name: null, people: {}, agents: {}, groups: {}, convs: null, open: null };
   // opened: the ids of the messages whose delivery list is open, so a redraw draws it open again
   const state = { query: "", arrived: new Set(), opened: new Set(), failed: null, updated: null };
   // attachment URLs already shown, kept until shortly before they expire: a fresh presigned URL downloads the image again
@@ -75,7 +75,7 @@
   const KIND = {
     person: {
       glyph: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3.2 13.5c.6-2.5 2.5-3.9 4.8-3.9s4.2 1.4 4.8 3.9"/>',
-      label: (a) => (a === data.me ? "You" : data.remarks[a] ?? a),
+      label: (a) => (a === data.me ? "You" : data.people[a]?.remark ?? a),
       addr: named,
       detail: (a) => data.people[a]?.name ?? "Person",
       noun: () => "Person",
@@ -172,7 +172,6 @@
     data.people = Object.fromEntries(me.people.map((p) => [p.username, p]));
     data.agents = Object.fromEntries(me.people.flatMap((p) => p.agents.map((a) => [`${p.username}/${a.name}`, a])));
     data.groups = Object.fromEntries(me.groups.map((g) => [g.address, g]));
-    data.remarks = me.remarks;
     data.name = me.name;
     const seen = data.convs && new Map(data.convs.map((c) => [c.key, c.last.sent_at]));
     if (seen) for (const c of list.conversations) if (seen.get(c.key) !== c.last.sent_at) state.arrived.add(c.key);

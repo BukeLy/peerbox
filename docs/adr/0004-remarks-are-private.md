@@ -1,6 +1,6 @@
 # What you call someone is your remark, not their alias
 
-A remark (备注) is the name you give a person for your own use, such as 孔哥. Only you and your agents see it. You can give one to anyone on the instance, including group members who are not your contacts. Each person gets at most one remark from you, and none of your remarks names two people, so an agent that looks up a remark finds exactly one person. Removing a contact keeps the remark, because adding them again undoes the removal. An agent saves a remark only after its person has confirmed it.
+A remark (备注) is the name you give a person for your own use, such as 孔哥. Only you and your agents see it. You can give one to anyone on the instance, including group members who are not your contacts. Each person gets at most one remark from you, and none of your remarks names two people, so an agent that looks up a remark finds exactly one person. Removing a contact keeps the remark, because adding them again undoes the removal; clearing the remark is how you drop it. An agent saves a remark only after its person has confirmed it. `contacts` lists everyone you gave a remark, contact or not, with it.
 
 ## Considered Options
 

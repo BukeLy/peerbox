@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from fastmcp.server.lifespan import lifespan
 from fastmcp.utilities.logging import get_logger
 
+import accounts
 import mailbox
 
 HERE = Path(__file__).parent
@@ -57,9 +58,9 @@ class Waiters:
             if not watching:
                 del self.by_person[person]
 
-    def wake(self, connection, pid, channel, person: str) -> None:
-        """The listener's callback: the notification names one person's account."""
-        for woken in self.by_person.get(int(person), ()):
+    def wake(self, connection, pid, channel, payload: str) -> None:
+        """The listener's callback: the payload is one person's account id."""
+        for woken in self.by_person.get(int(payload), ()):
             woken.set()
 
 
@@ -177,5 +178,5 @@ async def _record_organisations(github: httpx2.AsyncClient, claims: dict) -> Non
                     orgs.append(account["login"])
         page = installed.links.get("next", {}).get("url")
     async with get_db() as db:
-        you = await mailbox.caller(db, claims)
+        you = await accounts.sign_in(db, claims)
         await mailbox.record_memberships(db, you.person, orgs)

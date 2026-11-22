@@ -15,12 +15,13 @@ from sse_starlette import EventSourceResponse
 from starlette.requests import Request
 from starlette.responses import FileResponse, RedirectResponse, Response
 
+import accounts
 import instance
 import mailbox
 
 HERE = Path(__file__).parent
 CALLBACK_URL = f"{instance.BASE_URL}/login/callback"
-SESSION_KEY = instance.fernet("peerbox-panel-session")
+SESSION_KEY = instance.fernet("peerbox-panel-account")
 SESSION_SECONDS = 8 * 3600
 PING_SECONDS = 30  # keeps proxies from closing a quiet stream
 COOKIE = {"httponly": True, "secure": True, "samesite": "lax"}
@@ -54,7 +55,7 @@ def install(mcp) -> None:
         except InvalidToken:
             return None
         async with instance.get_db() as db:
-            return person if await mailbox.person(db, person) else None
+            return person if await accounts.profile(db, person) else None
 
     def signed_out() -> Response:
         return Response(
@@ -109,19 +110,13 @@ def install(mcp) -> None:
                 "https://api.github.com/user",
                 headers={"Authorization": f"Bearer {token}"},
             )
-        profile = user.raise_for_status().json()
-        # The claims an MCP sign-in carries, so both find the same account.
-        claims = {
-            "sub": str(profile["id"]),
-            "login": profile["login"],
-            "name": profile.get("name"),
-        }
+        claims = accounts.github_claims(user.raise_for_status().json())
         if not await instance.admit(token, claims):
             return Response(
                 f"{claims['login']} is not admitted to this peerbox.", status_code=403
             )
         async with instance.get_db() as db:
-            you = await mailbox.caller(db, claims)
+            you = await accounts.sign_in(db, claims)
         response = RedirectResponse("/", status_code=303)
         response.set_cookie(
             "peerbox_session",
@@ -152,7 +147,7 @@ def install(mcp) -> None:
         return route
 
     async def me(db, person: int, request: Request) -> dict:
-        return await mailbox.person(db, person) | await mailbox.contacts_and_groups(
+        return await accounts.profile(db, person) | await mailbox.contacts_and_groups(
             db, person
         )
 

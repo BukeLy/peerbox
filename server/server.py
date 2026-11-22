@@ -49,6 +49,7 @@ from pydantic.alias_generators import to_camel
 from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import from_json, to_json
 
+import accounts
 import instance
 import mailbox
 import panel
@@ -60,10 +61,11 @@ ICON = b64encode((HERE / "icon.png").read_bytes()).decode()
 MAX_CALLS_PER_MINUTE = 60
 HEARTBEAT_SECONDS = 30
 AGENT = r"[A-Za-z0-9._-]{1,100}"
+USERNAME = r"[A-Za-z0-9-]+"  # what is typed to find someone, in any case
 DirectAddress = Annotated[
     str,
     Field(
-        pattern=rf"^[A-Za-z0-9-]+(/{AGENT})?$",
+        pattern=rf"^{USERNAME}(/{AGENT})?$",
         description='A username ("turing") or "username/agent" ("turing/review-bot")',
     ),
 ]
@@ -79,8 +81,12 @@ FromAgent = Annotated[
         "have read its inbox once. Leave it out to write as yourself."
     ),
 ]
-# What anyone types to reach a person: a username, in any case.
-Username = Annotated[str, Field(pattern=r"^[A-Za-z0-9-]+$")]
+Username = Annotated[str, Field(pattern=rf"^{USERNAME}$")]
+# A username someone chooses: letters, digits and single hyphens, as GitHub logins.
+NewUsername = Annotated[
+    str,
+    Field(pattern=r"^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$", max_length=accounts.MAX_USERNAME),
+]
 IN_A_GROUP = (
     "In a group (a message whose `to` is a #id), answer only what asks you, and send "
     "no acknowledgements."
@@ -236,7 +242,7 @@ async def me(
 ) -> mailbox.Address:
     """The caller's address: them, or one of their agents, which must have read its
     inbox once."""
-    return await mailbox.caller(db, token.claims, agent)
+    return await mailbox.as_agent(db, await accounts.sign_in(db, token.claims), agent)
 
 
 @mcp.tool(annotations=READ)
@@ -246,18 +252,14 @@ async def whoami(
 ) -> dict:
     """Show who you are signed in as: your username, which others write to, your
     display name, and the GitHub login you signed in with."""
-    return await mailbox.person(db, (await me(db, token)).person)
+    return await accounts.profile(db, (await me(db, token)).person)
 
 
 @mcp.tool(annotations=IDEMPOTENT_WRITE)
 async def set_profile(
     username: Annotated[
-        str | SkipJsonSchema[None],
-        Field(
-            pattern=r"^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$",
-            max_length=39,
-            description="Your new username: letters, digits and single hyphens",
-        ),
+        NewUsername | SkipJsonSchema[None],
+        Field(description="Your new username: letters, digits and single hyphens"),
     ] = None,
     name: Annotated[
         str | SkipJsonSchema[None],
@@ -272,7 +274,7 @@ async def set_profile(
     yours to take back; nobody else can have it.
     """
     you = await me(db, token)
-    return await mailbox.set_profile(db, you, username, name)
+    return await accounts.set_profile(db, you, username, name)
 
 
 @mcp.tool(annotations=IDEMPOTENT_WRITE)
@@ -282,7 +284,7 @@ async def set_remark(
         str,
         Field(
             max_length=16,
-            description='What you call them ("Prof"); empty to remove it',
+            description='What you call them ("Prof"); empty to clear it',
         ),
     ],
     token: AccessToken = CurrentAccessToken(),
@@ -294,9 +296,9 @@ async def set_remark(
     Save one only when your user tells you, or confirms who they meant.
     """
     you = await me(db, token)
-    other = await mailbox.resolve(db, username)
-    await mailbox.set_remark(db, you.person, other, remark)
-    return {"username": str(other), "remark": remark.strip()}
+    other = await accounts.resolve(db, username)
+    kept = await mailbox.set_remark(db, you.person, other, remark)
+    return {"username": str(other), "remark": kept}
 
 
 @mcp.tool(annotations=READ)
@@ -304,14 +306,15 @@ async def contacts(
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
 ) -> dict:
-    """List your contacts with their agents, the groups you are in with their
-    members, and your remarks: what your user calls people, by username.
+    """List the people you know, and the groups you are in with their members.
 
-    Use it to turn a name like "Prof" into a send address: a username for the
-    person, `username/agent` for one of their agents, a group's "#id" for
-    everyone in it. If no remark, username or display name fits, or more than
-    one does, ask your user who they mean. To reach someone who is not listed,
-    ask with add_contact.
+    The people are your contacts, the members of your groups and anyone you gave
+    a remark: each with their display name, GitHub login, your remark for them,
+    and, for a contact, their agents. Use it to turn a name like "Prof" into a
+    send address: a contact's username, `username/agent` for one of their
+    agents, a group's "#id" for everyone in it. If no remark, username or display
+    name fits, or more than one does, ask your user who they mean. To reach
+    someone who is not a contact, ask with add_contact.
     """
     return await mailbox.contacts_and_groups(db, (await me(db, token)).person)
 
@@ -350,7 +353,7 @@ async def send(
     """
     you = await me(db, token, from_agent)
     return await mailbox.send(
-        db, you, await mailbox.resolve(db, to), text, reply_to, attachments
+        db, you, await accounts.resolve(db, to), text, reply_to, attachments
     )
 
 
@@ -434,7 +437,7 @@ async def invite(
     contact's is invited and joins when they accept."""
     you = await me(db, token, from_agent)
     status = await mailbox.invite(
-        db, you, await mailbox.resolve(db, group), await mailbox.resolve(db, address)
+        db, you, await accounts.resolve(db, group), await accounts.resolve(db, address)
     )
     return {"group": group, "address": address, "status": status}
 
@@ -462,8 +465,8 @@ async def leave(
     is deleted once its messages are, 30 days after they were sent.
     """
     you = await me(db, token, from_agent)
-    member = await mailbox.resolve(db, address) if address else you
-    await mailbox.leave(db, you, await mailbox.resolve(db, group), member)
+    member = await accounts.resolve(db, address) if address else you
+    await mailbox.leave(db, you, await accounts.resolve(db, group), member)
     return {"group": group, "removed": str(member)}
 
 
@@ -486,9 +489,9 @@ async def add_contact(
     any free username, so tell your user the GitHub login this returns.
     """
     you = await me(db, token, from_agent)
-    other = await mailbox.resolve(db, username)
+    other = await accounts.resolve(db, username)
     status = await mailbox.add_contact(db, you, other, greeting)
-    shown = await mailbox.person(db, other.person)
+    shown = await accounts.profile(db, other.person)
     return {"username": str(other), "github": shown["github"], "status": status}
 
 
@@ -527,7 +530,7 @@ async def remove_contact(
 ) -> dict:
     """Remove a contact and block them, so neither of you can write to the other.
     Ask your user first. add_contact undoes it."""
-    other = await mailbox.resolve(db, username)
+    other = await accounts.resolve(db, username)
     await mailbox.remove_contact(db, (await me(db, token)).person, other)
     return {"removed": str(other)}
 
@@ -839,7 +842,7 @@ async def events_principal() -> int:
     if token is None or not await instance.admit(token.token, token.claims):
         raise MCPError(FORBIDDEN, "Only people this peerbox admits can subscribe")
     async with instance.get_db() as db:
-        return (await mailbox.caller(db, token.claims)).person
+        return (await accounts.sign_in(db, token.claims)).person
 
 
 def subscription_id(person: int, params: UnsubscribeParams) -> str:
@@ -1156,7 +1159,8 @@ class MessageEvents(ServerExtension):
 
     async def pump(self, subscription: Subscription) -> None:
         """Deliver the subscription's new deliveries in order until it expires."""
-        reader = mailbox.Address(subscription.person, subscription.agent)
+        async with instance.get_db() as db:
+            reader = await accounts.address(db, subscription.person, subscription.agent)
         try:
             with instance.waiters.watch(subscription.person) as woken:
                 while datetime.now(UTC) < subscription.expires_at:
