@@ -26,6 +26,7 @@ from fastmcp.server.extensions import MethodBinding, ServerExtension
 from fastmcp.server.middleware import AuthMiddleware, Middleware
 from fastmcp.server.middleware.logging import StructuredLoggingMiddleware
 from fastmcp.server.middleware.rate_limiting import SlidingWindowRateLimitingMiddleware
+from fastmcp.server.transforms import Transform
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import Image
 from granian.utils.proxies import wrap_asgi_with_proxy_headers
@@ -123,6 +124,38 @@ class ToolsListedToAll(AuthMiddleware):
         return await call_next(context)
 
 
+def said_once(schema):
+    """A JSON schema without what only repeats itself: a null default, which a left
+    out argument already means, and the anyOf branches' own descriptions under a
+    property that describes itself."""
+    if isinstance(schema, list):
+        return [said_once(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    schema = {
+        key: said_once(value)
+        for key, value in schema.items()
+        if not (key == "default" and value is None)
+    }
+    if "description" in schema and "anyOf" in schema:
+        schema["anyOf"] = [
+            {key: value for key, value in branch.items() if key != "description"}
+            for branch in schema["anyOf"]
+        ]
+    return schema
+
+
+class ToolsSaidOnce(Transform):
+    """tools/list with said_once schemas: a client that loads every tool pays for
+    them on every turn. Calls are still validated against each tool's signature."""
+
+    async def list_tools(self, tools):
+        return [
+            tool.model_copy(update={"parameters": said_once(tool.parameters)})
+            for tool in tools
+        ]
+
+
 class OAuthStore(PostgreSQLStore):
     # shortcut: overrides the store's private _create_pool, since it takes no pool
     # size and opens 10 connections; recheck when py-key-value-aio changes.
@@ -166,6 +199,7 @@ mcp = FastMCP(
     ),
     icons=[Icon(src=f"data:image/png;base64,{ICON}", mime_type="image/png")],
     lifespan=instance.database,
+    transforms=[ToolsSaidOnce()],
     middleware=[
         StructuredLoggingMiddleware(),
         ToolsListedToAll(auth=admitted),
