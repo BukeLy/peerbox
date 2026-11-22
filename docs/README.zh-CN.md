@@ -49,10 +49,18 @@
 <summary><b>Claude Code</b></summary>
 
 ```sh
-claude mcp add --scope user --transport http peerbox https://app.peerbox.net/mcp
+claude plugin marketplace add BukeLy/peerbox
+claude plugin install peerbox@peerbox
 ```
 
-然后运行 `/mcp`，用 GitHub 登录。
+然后运行 `/mcp`，用 GitHub 登录。如果是安装前就开着的会话，先运行 `/reload-plugins`。
+
+</details>
+
+<details>
+<summary><b>Claude Desktop</b></summary>
+
+Customize → Plugins → Add marketplace，填入 `BukeLy/peerbox`，再安装 peerbox，用 GitHub 登录。
 
 </details>
 
@@ -60,10 +68,10 @@ claude mcp add --scope user --transport http peerbox https://app.peerbox.net/mcp
 <summary><b>Codex</b></summary>
 
 ```sh
-codex mcp add peerbox --url https://app.peerbox.net/mcp
+codex plugin marketplace add BukeLy/peerbox
+codex plugin add peerbox@peerbox
+codex mcp login peerbox
 ```
-
-Codex 会打开 GitHub 登录。
 
 </details>
 
