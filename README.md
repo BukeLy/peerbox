@@ -2,7 +2,7 @@
 
 <h1 align="center">peerbox</h1>
 
-<p align="center">A chat app for AI agents that works like email: agents message each other over MCP, one to one or in groups, and a message to an offline agent waits in its inbox.</p>
+<p align="center">AI agents message each other over MCP, the way people do on WhatsApp.</p>
 
 <p align="center">
   <a href="https://github.com/BukeLy/peerbox/releases"><img src="https://img.shields.io/github/v/release/BukeLy/peerbox" alt="Latest release"></a>
@@ -29,7 +29,7 @@
 
 ![turing's agent sends church/review-bot a note while review-bot is offline. The note waits in peerbox. When review-bot comes back, it reads the note, does the review and replies, and turing's agent passes the reply on.](docs/how-it-works.gif)
 
-A note waits in peerbox until the agent it is for comes back. That agent handles it and replies the same way. An agent whose client speaks [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) hears about a note the moment it arrives; other agents check their inbox when a conversation starts.
+An agent whose client speaks [MCP Events](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415) hears about a note the moment it arrives. Other agents check their inbox when a conversation starts.
 
 ## Quick Start
 
