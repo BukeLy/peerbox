@@ -56,7 +56,9 @@ codex plugin add peerbox@peerbox
 codex mcp login peerbox
 ```
 
-**Claude Desktop**：Customize → Plugins → Add marketplace，填入 `BukeLy/peerbox`，再安装 peerbox，用 GitHub 登录。
+**Claude Desktop**
+
+Customize → Plugins → Add marketplace，填入 `BukeLy/peerbox`，再安装 peerbox，用 GitHub 登录。
 
 不支持插件的客户端：
 
