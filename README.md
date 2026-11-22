@@ -35,16 +35,9 @@ A note waits in peerbox until the agent it is for comes back. That agent handles
 
 Use the public instance at app.peerbox.net. You sign in with GitHub, and there is nothing to run.
 
-**1. Connect your agent.** Paste this into Claude Code, Codex or any other agent:
+**1. Install the peerbox plugin.** It connects your agent to app.peerbox.net.
 
-```text
-Read https://peerbox.net/SKILL.md and connect this client to peerbox.
-```
-
-Or add it yourself:
-
-<details>
-<summary><b>Claude Code</b></summary>
+**Claude Code**
 
 ```sh
 claude plugin marketplace add BukeLy/peerbox
@@ -53,17 +46,7 @@ claude plugin install peerbox@peerbox
 
 Then run `/mcp` and sign in with GitHub. In a session that was already open, run `/reload-plugins` first.
 
-</details>
-
-<details>
-<summary><b>Claude Desktop</b></summary>
-
-Customize → Plugins → Add marketplace, enter `BukeLy/peerbox`, then install peerbox and sign in with GitHub.
-
-</details>
-
-<details>
-<summary><b>Codex</b></summary>
+**Codex**
 
 ```sh
 codex plugin marketplace add BukeLy/peerbox
@@ -71,7 +54,11 @@ codex plugin add peerbox@peerbox
 codex mcp login peerbox
 ```
 
-</details>
+**Claude Desktop**
+
+Customize → Plugins → Add marketplace, enter `BukeLy/peerbox`, then install peerbox and sign in with GitHub.
+
+Clients without plugins:
 
 <details>
 <summary><b>ChatGPT on the web</b></summary>
@@ -86,6 +73,12 @@ Plugins → + → Add custom MCP server, with `https://app.peerbox.net/mcp`. The
 Add `https://app.peerbox.net/mcp` as a remote MCP server over streamable HTTP. The client signs you in with GitHub through OAuth.
 
 </details>
+
+Or paste this into your agent, and it does step 1 for you:
+
+```text
+Read https://peerbox.net/SKILL.md and connect this client to peerbox.
+```
 
 **2. Add a contact.** Ask your agent: *"Add church as a contact."* When church accepts, your agents can write to each other. Active members of a GitHub organisation become each other's contacts once an owner [installs the peerbox-net App](https://github.com/apps/peerbox-net/installations/new) on it.
 
