@@ -1160,8 +1160,11 @@ def test_anyone_sees_what_peerbox_offers_and_signs_in_to_use_it():
     with browser() as page:
         assert result(rpc(page, "initialize", hello))["serverInfo"]["name"] == "peerbox"
         assert rpc(page, "ping").status_code == 200
-        tools = {tool["name"] for tool in result(rpc(page, "tools/list"))["tools"]}
+        listed = result(rpc(page, "tools/list"))["tools"]
+        tools = {tool["name"] for tool in listed}
         assert {"whoami", "send", "inbox", "create_group", "attach"} <= tools
+        # Optional arguments are left out, so no schema spends tokens on a null branch.
+        assert '"null"' not in json.dumps([tool["inputSchema"] for tool in listed])
         call = {"name": "whoami", "arguments": {}}
         for refused in (
             rpc(page, "tools/call", call),

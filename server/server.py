@@ -44,6 +44,7 @@ from mcp_types import PaginatedRequestParams, RequestParams, Result
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
+from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import from_json, to_json
 
 import instance
@@ -70,7 +71,7 @@ Group = Annotated[
 ]
 AgentName = Annotated[str, Field(pattern=rf"^{AGENT}$")]
 FromAgent = Annotated[
-    AgentName | None,
+    AgentName | SkipJsonSchema[None],
     Field(
         description="One of your own agents to write as, so answers reach it; it must "
         "have read its inbox once. Leave it out to write as yourself."
@@ -271,11 +272,13 @@ async def send(
         str, Field(min_length=1, max_length=4000, description="The message")
     ],
     reply_to: Annotated[
-        int | None, Field(description="The id of the message you answer")
+        int | SkipJsonSchema[None],
+        Field(description="The id of the message you answer"),
     ] = None,
     from_agent: FromAgent = None,
     attachments: Annotated[
-        list[int] | None, Field(description="Ids from attach, to send those files")
+        list[int] | SkipJsonSchema[None],
+        Field(description="Ids from attach, to send those files"),
     ] = None,
     token: AccessToken = CurrentAccessToken(),
     db: Connection = Depends(instance.get_db),
@@ -296,7 +299,7 @@ async def send(
 @mcp.tool(annotations=READ)
 async def inbox(
     agent: Annotated[
-        AgentName | None,
+        AgentName | SkipJsonSchema[None],
         Field(
             description="One of your own agents, to read its inbox instead of yours. "
             "Reading it lists the agent in contacts, so others can write to it."
@@ -324,7 +327,7 @@ async def inbox(
 async def mark_read(
     ids: Annotated[list[int], Field(description="The ids of the messages you handled")],
     agent: Annotated[
-        AgentName | None,
+        AgentName | SkipJsonSchema[None],
         Field(
             description="The agent you read them as. Leave it out for the messages "
             "you read as yourself."
@@ -382,7 +385,7 @@ async def invite(
 async def leave(
     group: Group,
     address: Annotated[
-        DirectAddress | None,
+        DirectAddress | SkipJsonSchema[None],
         Field(
             description='The address to remove: a login ("turing") or "login/agent" '
             '("turing/review-bot"). Leave it out to leave as the address you write '
@@ -413,7 +416,8 @@ async def add_contact(
         Field(pattern=r"^[A-Za-z0-9-]+$", description='Their GitHub login ("turing")'),
     ],
     greeting: Annotated[
-        str | None, Field(max_length=500, description="Tells them who you are")
+        str | SkipJsonSchema[None],
+        Field(max_length=500, description="Tells them who you are"),
     ] = None,
     from_agent: FromAgent = None,
     token: AccessToken = CurrentAccessToken(),
@@ -512,30 +516,31 @@ class ChatGPTFile(BaseModel):
 
     download_url: str
     file_id: str
-    mime_type: str | None = None
-    file_name: str | None = None
+    mime_type: str | SkipJsonSchema[None] = None
+    file_name: str | SkipJsonSchema[None] = None
 
 
 @mcp.tool(annotations=WRITE, meta={"openai/fileParams": ["file"]})
 async def attach(
     file: Annotated[
-        ChatGPTFile | None, Field(description="A file your user shared with you")
+        ChatGPTFile | SkipJsonSchema[None],
+        Field(description="A file your user shared with you"),
     ] = None,
     url: Annotated[
-        str | None,
+        str | SkipJsonSchema[None],
         Field(
             pattern=r"^https://[^/?#@]+",
             description="A public https URL for peerbox to fetch the file from",
         ),
     ] = None,
     name: Annotated[
-        str | None,
+        str | SkipJsonSchema[None],
         Field(
             min_length=1, description="The file's name, if the source doesn't give it"
         ),
     ] = None,
     mime: Annotated[
-        str | None,
+        str | SkipJsonSchema[None],
         Field(
             description="The file's type (\"image/png\"), if the source doesn't give it"
         ),
