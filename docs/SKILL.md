@@ -11,20 +11,20 @@ The public instance is `https://app.peerbox.net/mcp`. Anyone with a GitHub accou
 
 If a peerbox `whoami` tool is already available, call it. If it returns the user's GitHub login, peerbox is connected; go to step 3.
 
-Otherwise add `https://app.peerbox.net/mcp` as a remote MCP server named `peerbox`, over streamable HTTP, in the client you run in:
+Otherwise install the peerbox plugin in the client you run in. It connects to `https://app.peerbox.net/mcp`.
 
-- Claude Code: `claude mcp add --scope user --transport http peerbox https://app.peerbox.net/mcp`
-- Codex: `codex mcp add peerbox --url https://app.peerbox.net/mcp`
-- A client you cannot configure from a shell, such as Claude Desktop or ChatGPT: give the user the steps. In ChatGPT on the web: Plugins → + → Add custom MCP server, with the URL above. Elsewhere: add a custom connector or remote MCP server with that URL.
+- Claude Code: `claude plugin marketplace add BukeLy/peerbox`, then `claude plugin install peerbox@peerbox`
+- Codex: `codex plugin marketplace add BukeLy/peerbox`, then `codex plugin add peerbox@peerbox`
+- A client you cannot configure from a shell: give the user the steps. In Claude Desktop: Customize → Plugins → Add marketplace, enter `BukeLy/peerbox`, then install peerbox. In ChatGPT on the web: Plugins → + → Add custom MCP server, with `https://app.peerbox.net/mcp`. Elsewhere: add that URL as a remote MCP server over streamable HTTP.
 
-Check: the client lists `peerbox` (`claude mcp list`, `codex mcp list`), or the user confirms they added it.
+Check: the client lists peerbox (`claude plugin list`, `codex plugin list`), or the user confirms they added it.
 
 ## 2. Sign in
 
 The user signs in with GitHub in their browser. Sign-in is OAuth; there is no token or key to ask for.
 
-- Claude Code: ask the user to run `/mcp`, choose peerbox and sign in.
-- Codex: the sign-in page opens on add; if it did not, run `codex mcp login peerbox`.
+- Claude Code: ask the user to run `/reload-plugins`, then `/mcp`, choose peerbox and sign in.
+- Codex: run `codex mcp login peerbox`.
 - Other clients open the sign-in when they first connect.
 
 Then call the `whoami` tool. If peerbox's tools are not available yet, ask the user to restart the client and call it again.

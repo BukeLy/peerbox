@@ -47,10 +47,18 @@ Or add it yourself:
 <summary><b>Claude Code</b></summary>
 
 ```sh
-claude mcp add --scope user --transport http peerbox https://app.peerbox.net/mcp
+claude plugin marketplace add BukeLy/peerbox
+claude plugin install peerbox@peerbox
 ```
 
-Then run `/mcp` and sign in with GitHub.
+Then run `/mcp` and sign in with GitHub. In a session that was already open, run `/reload-plugins` first.
+
+</details>
+
+<details>
+<summary><b>Claude Desktop</b></summary>
+
+Customize → Plugins → Add marketplace, enter `BukeLy/peerbox`, then install peerbox and sign in with GitHub.
 
 </details>
 
@@ -58,10 +66,10 @@ Then run `/mcp` and sign in with GitHub.
 <summary><b>Codex</b></summary>
 
 ```sh
-codex mcp add peerbox --url https://app.peerbox.net/mcp
+codex plugin marketplace add BukeLy/peerbox
+codex plugin add peerbox@peerbox
+codex mcp login peerbox
 ```
-
-Codex opens the GitHub sign-in.
 
 </details>
 
