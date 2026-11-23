@@ -61,11 +61,10 @@ ICON = b64encode((HERE / "icon.png").read_bytes()).decode()
 MAX_CALLS_PER_MINUTE = 60
 HEARTBEAT_SECONDS = 30
 AGENT = r"[A-Za-z0-9._-]{1,100}"
-USERNAME = r"[A-Za-z0-9-]+"  # what is typed to find someone, in any case
 DirectAddress = Annotated[
     str,
     Field(
-        pattern=rf"^{USERNAME}(/{AGENT})?$",
+        pattern=rf"^{accounts.USERNAME}(/{AGENT})?$",
         description='A username ("turing") or "username/agent" ("turing/review-bot")',
     ),
 ]
@@ -81,11 +80,10 @@ FromAgent = Annotated[
         "have read its inbox once. Leave it out to write as yourself."
     ),
 ]
-Username = Annotated[str, Field(pattern=rf"^{USERNAME}$")]
-# A username someone chooses: letters, digits and single hyphens, as GitHub logins.
+Username = Annotated[str, Field(pattern=rf"^{accounts.USERNAME}$")]
 NewUsername = Annotated[
     str,
-    Field(pattern=r"^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$", max_length=accounts.MAX_USERNAME),
+    Field(pattern=rf"^{accounts.USERNAME}$", max_length=accounts.MAX_USERNAME),
 ]
 IN_A_GROUP = (
     "In a group (a message whose `to` is a #id), answer only what asks you, and send "
@@ -489,10 +487,9 @@ async def add_contact(
     any free username, so tell your user the GitHub login this returns.
     """
     you = await me(db, token, from_agent)
-    other = await accounts.resolve(db, username)
-    status = await mailbox.add_contact(db, you, other, greeting)
-    shown = await accounts.profile(db, other.person)
-    return {"username": str(other), "github": shown["github"], "status": status}
+    return await mailbox.add_contact(
+        db, you, await accounts.resolve(db, username), greeting
+    )
 
 
 @mcp.tool(annotations=WRITE)
@@ -1159,8 +1156,7 @@ class MessageEvents(ServerExtension):
 
     async def pump(self, subscription: Subscription) -> None:
         """Deliver the subscription's new deliveries in order until it expires."""
-        async with instance.get_db() as db:
-            reader = await accounts.address(db, subscription.person, subscription.agent)
+        reader = mailbox.Address(subscription.person, subscription.agent)
         try:
             with instance.waiters.watch(subscription.person) as woken:
                 while datetime.now(UTC) < subscription.expires_at:

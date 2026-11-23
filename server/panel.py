@@ -21,6 +21,8 @@ import mailbox
 
 HERE = Path(__file__).parent
 CALLBACK_URL = f"{instance.BASE_URL}/login/callback"
+# Not the key of earlier versions: their cookies hold a GitHub login, which must not
+# read as someone's account id.
 SESSION_KEY = instance.fernet("peerbox-panel-account")
 SESSION_SECONDS = 8 * 3600
 PING_SECONDS = 30  # keeps proxies from closing a quiet stream
@@ -134,7 +136,7 @@ def install(mcp) -> None:
 
     def api(read):
         """A JSON route that calls read(db, person, request) for the signed-in
-        person's account."""
+        person's account, and signs out when read finds the account gone (None)."""
 
         async def route(request: Request) -> Response:
             person = await viewer(request)
@@ -142,14 +144,15 @@ def install(mcp) -> None:
                 return signed_out()
             async with instance.get_db() as db:
                 data = await read(db, person, request)
+            if data is None:
+                return signed_out()
             return Response(to_json(data), media_type="application/json")
 
         return route
 
-    async def me(db, person: int, request: Request) -> dict:
-        return await accounts.profile(db, person) | await mailbox.contacts_and_groups(
-            db, person
-        )
+    async def me(db, person: int, request: Request) -> dict | None:
+        shown = await accounts.profile(db, person)
+        return shown and shown | await mailbox.contacts_and_groups(db, person)
 
     async def conversations(db, person: int, request: Request) -> dict:
         return await mailbox.conversations(db, person)

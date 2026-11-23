@@ -23,7 +23,7 @@ BukeLy, peerbox's maintainer, runs the public instance on Microsoft Azure in Cen
 
 The panel stores nothing on the server. It signs you in with an encrypted cookie that stays in your browser for 8 hours.
 
-The server's logs record each request's MCP method, how long it took and the error it ended with, if any, which can name a username, an agent or a group. They also record the account number behind each event subscription created, refreshed or removed. They never hold message text. Azure keeps them for 30 days.
+The server's logs record each request's MCP method, how long it took and the error it ended with, if any, which can name a username, an agent or a group. They also record the account id behind each event subscription created, refreshed or removed. They never hold message text. Azure keeps them for 30 days.
 
 ## How long it keeps it
 

@@ -8,7 +8,7 @@ Keying people on the GitHub login was unsafe. After someone renamed on GitHub, t
 
 - GitHub's numeric user id as the key: it fixes renames but still binds every account to GitHub.
 - Releasing a username as soon as its owner gives it up: anyone holding the old name would then reach whoever took it next. Keeping old names reserved for their owner follows a design proposed on V2EX.
-- A UUID for the account id: instances never exchange data (ADR 0001), so the id only has to be unique within one database. It is a bigint, like every other id.
+- A UUID for the account id: instances never exchange data (ADR 0001), so the id only has to be unique within one database. It is a bigint the database counts up, as message ids are.
 
 ## Consequences
 

@@ -1,10 +1,10 @@
 """The message rules, as SQL: addresses, contacts and requests, remarks, deliveries,
-groups, attachments and stored event subscriptions. The MCP tools, the panel and
-accounts.py call the names without a leading _."""
+groups, attachments and stored event subscriptions. Other modules call the names
+without a leading _."""
 
 import os
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from secrets import token_hex
 
@@ -77,6 +77,9 @@ _CIRCLE = (
     "union select person from group_members where group_id in "
     "(select group_id from group_members where person = $1)"
 )
+# Everyone whose contacts list person $1: their circle, and anyone who gave them a
+# remark.
+_KNOWN_BY = f"{_CIRCLE} union select owner from remarks where person = $1"
 
 
 class Refused(ToolError):
@@ -91,7 +94,7 @@ class Address:
     person: int | None = None
     agent: str | None = None
     group: str | None = None
-    username: str | None = None
+    username: str | None = field(default=None, compare=False)  # as shown, not who
 
     def __str__(self) -> str:
         if self.group is not None:
@@ -129,11 +132,10 @@ async def _wake(db: Connection, people: list[int]) -> None:
     )
 
 
-async def wake_circle(db: Connection, person: int) -> None:
-    """Wake person's circle, whose contacts and groups list them, when how they show
-    changed."""
-    circle = await db.fetch(_CIRCLE, person, _everyone_is_a_contact())
-    await _wake(db, [row["person"] for row in circle])
+async def wake_known_by(db: Connection, person: int) -> None:
+    """Wake everyone whose contacts list person, when how they show changed."""
+    known_by = await db.fetch(_KNOWN_BY, person, _everyone_is_a_contact())
+    await _wake(db, [row["person"] for row in known_by])
 
 
 async def _wake_group(db: Connection, group_id: str, *people: int) -> None:
@@ -717,6 +719,18 @@ async def _make_contacts(db: Connection, person: int, other: int) -> None:
 
 async def add_contact(
     db: Connection, asker: Address, other: Address, greeting: str | None
+) -> dict:
+    """Ask other to become asker's contact: their username and GitHub login, since
+    anyone may take any free username, and what became of the request."""
+    return {
+        "username": str(other),
+        "github": await db.fetchval("select github($1)", other.person),
+        "status": await _ask(db, asker, other, greeting),
+    }
+
+
+async def _ask(
+    db: Connection, asker: Address, other: Address, greeting: str | None
 ) -> str:
     unblocked = await _unblock(db, asker.person, other.person)
     if await _is_contact(db, asker.person, other.person):
@@ -880,7 +894,7 @@ async def delete_account(db: Connection, person: int) -> None:
             "or id in (select message_id from deliveries where recipient = $1)) "
             "select sender as person from gone "
             "union select recipient from deliveries "
-            f"where message_id in (select id from gone) union {_CIRCLE} "
+            f"where message_id in (select id from gone) union {_KNOWN_BY} "
             "union select asker from requests where target = $1 "
             "union select target from requests where asker = $1",
             person,

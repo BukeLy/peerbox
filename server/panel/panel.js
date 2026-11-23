@@ -65,31 +65,33 @@
   const owner = (a) => a.split("/")[0];
   const agentOf = (a) => a.split("/")[1];
   const mine = (a) => kind(a) !== "group" && owner(a) === data.me;
-  // label: you as "You", your agents by name, a group by its name, anyone else by their address.
+  // called: what you call a person, your remark for them or else their username.
+  // label: you as "You", your agents by name, a group by its name, anyone else as you call them.
   // addr: the label as an address; another person's agent keeps its owner, quiet. detail: the line under a member's address.
   // noun: the line under the details pane's title. facts: the details pane's lines about it.
   // subtitle: the line under the conversation's title. where: how the finding names the conversation, around a link to it.
   // in: what an announcement of a new message adds after its sender.
+  const called = (p) => data.people[p]?.remark ?? p;
   const named = (a) => `<span class="addr">${esc(label(a))}</span>`;
   const direct = { where: (link) => `with ${link}`, in: () => "" };
   const KIND = {
     person: {
       glyph: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3.2 13.5c.6-2.5 2.5-3.9 4.8-3.9s4.2 1.4 4.8 3.9"/>',
-      label: (a) => (a === data.me ? "You" : data.people[a]?.remark ?? a),
+      label: (a) => (a === data.me ? "You" : called(a)),
       addr: named,
       detail: (a) => data.people[a]?.name ?? "Person",
       noun: () => "Person",
       // GitHub vouches for the login, not the username, which anyone may choose
       facts: (a, c) => `<p class="kv"><span>Username</span><span>${esc(a)}</span></p>
-        <p class="kv"><span>Name</span><span>${esc(data.people[a]?.name ?? "—")}</span></p>
+        <p class="kv"><span>Display name</span><span>${esc(data.people[a]?.name ?? "—")}</span></p>
         <p class="kv"><span>GitHub</span><span>${data.people[a]?.github ? `✓ ${esc(data.people[a].github)}` : "—"}</span></p>${members("Your side", c?.sides ?? [], a)}`,
       subtitle: (a) => (a === data.me ? "Messages to yourself" : data.people[a]?.name ?? "Person"),
       ...direct,
     },
     agent: {
       glyph: '<rect x="2.5" y="4.5" width="11" height="9" rx="3"/><path d="M6 8.3v1.4M10 8.3v1.4M8 4.5V2.3"/>',
-      label: (a) => (mine(a) ? agentOf(a) : a),
-      addr: (a) => (mine(a) ? named(a) : `<span class="addr"><span class="owner">${esc(owner(a))}/</span>${esc(agentOf(a))}</span>`),
+      label: (a) => (mine(a) ? agentOf(a) : `${called(owner(a))}/${agentOf(a)}`),
+      addr: (a) => (mine(a) ? named(a) : `<span class="addr"><span class="owner">${esc(called(owner(a)))}/</span>${esc(agentOf(a))}</span>`),
       detail: (a) => checked(a),
       noun: (a) => (mine(a) ? "Your agent" : "Agent"),
       facts: (a, c) => {

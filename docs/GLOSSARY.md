@@ -14,6 +14,10 @@ One recipient's copy of a message, read or unread independently of the other cop
 **Attachment** (附件):
 A file sent with a message, up to 10 MB, kept in object storage and deleted with the message after 30 days.
 
+**Account** (账号):
+A person's place on an instance, which their sign-ins reach and everything of theirs belongs to. It outlives a GitHub rename; deleting it deletes all of it.
+_Avoid_: user, account number
+
 **Address**:
 Where a message goes or comes from: a person's username, `username/agent` for one of their agents, or `#id` for a group.
 

@@ -137,7 +137,7 @@ async def test_a_contact_receives_and_clears_a_message(db):
 
 async def test_an_unknown_username_error_lists_close_matches(db):
     await whoami(token=signed_in("turing"), db=db)
-    with pytest.raises(ToolError, match="Close matches: turing"):
+    with pytest.raises(ToolError, match=r"Close matches: turing \(GitHub turing\)"):
         await send("uri", "hi", token=signed_in("church"), db=db)
 
 
@@ -226,6 +226,22 @@ async def test_a_taken_long_login_still_gives_a_username_of_39_characters(db):
         "b" * 36 + "-cd",
         "b" * 36 + "-2",
     ]
+
+
+async def test_a_login_outside_the_username_format_still_gives_a_username(db):
+    for login in ("old--login-", "mona_acme"):
+        await whoami(token=signed_in(login), db=db)
+    usernames = await db.fetch("select username from users order by id")
+    assert [row["username"] for row in usernames] == ["old-login", "mona-acme"]
+
+
+async def test_changing_only_a_usernames_case_is_free(db):
+    turing = signed_in("turing")
+    for username in ("Turing", "alan", "ALAN"):
+        changed = await set_profile(username=username, token=turing, db=db)
+        assert changed["username"] == username
+    with pytest.raises(ToolError, match="once a year"):
+        await set_profile(username="prof", token=turing, db=db)
 
 
 async def test_two_username_changes_at_once_make_one(db):
@@ -434,6 +450,17 @@ async def test_groups_contacts_and_deleted_accounts_wake_whom_they_change(
         assert (
             await woken(db, delete_account(token=church, db=db), everyone) == everyone
         )
+
+
+async def test_a_profile_change_wakes_whoever_gave_you_a_remark(db, public):
+    turing, kleene = signed_in("turing"), signed_in("kleene")
+    await whoami(token=signed_in("church"), db=db)
+    await whoami(token=kleene, db=db)
+    await set_remark("kleene", "Stephen", token=turing, db=db)
+    async with Client(server.mcp):
+        renamed = set_profile(name="Stephen Kleene", token=kleene, db=db)
+        both = {"kleene", "turing"}
+        assert await woken(db, renamed, both, "church") == both
 
 
 async def test_marking_a_copy_read_wakes_everyone_who_sees_its_state(db):
