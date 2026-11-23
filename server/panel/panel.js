@@ -101,7 +101,7 @@
           <p class="kv"><span>Acts for</span><span>${esc(person?.name ? `${person.name} (${owner(a)})` : owner(a))}</span></p>
           <p class="kv"><span>Inbox</span><span>${esc(checked(a))}</span></p>${members("Your side", c?.sides ?? [], a)}`;
       },
-      subtitle: (a) => [mine(a) ? "Your agent" : `${owner(a)}'s agent`, data.agents[a]?.description, data.agents[a] && checked(a).toLowerCase()].filter(Boolean).join(" · "),
+      subtitle: (a) => [mine(a) ? "Your agent" : `${called(owner(a))}'s agent`, data.agents[a]?.description, data.agents[a] && checked(a).toLowerCase()].filter(Boolean).join(" · "),
       ...direct,
     },
     group: {
@@ -112,10 +112,10 @@
       facts: (a) => {
         const g = data.groups[a];
         return g
-          ? `<p class="kv"><span>Owner</span><span class="addr">${esc(g.owner)}</span></p>${members(`${g.members.length} members`, g.members, a)}`
+          ? `<p class="kv"><span>Owner</span>${addr(g.owner)}</p>${members(`${g.members.length} members`, g.members, a)}`
           : `<p class="kv"><span>Membership</span><span>You left this group</span></p>`;
       },
-      subtitle: (a) => { const g = data.groups[a]; return g ? `${g.members.length} members · owner ${g.owner}` : "You are no longer in this group"; },
+      subtitle: (a) => { const g = data.groups[a]; return g ? `${g.members.length} members · owner ${g.owner === data.me ? "you" : label(g.owner)}` : "You are no longer in this group"; },
       where: (link) => `in ${link}`,
       in: (a) => ` in ${label(a)}`,
     },
