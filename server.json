@@ -11,7 +11,6 @@
   "icons": [
     { "src": "https://peerbox.net/icon.png", "mimeType": "image/png", "sizes": ["128x128"] }
   ],
-  "version": "0.2.10",
   "remotes": [
     {
       "type": "streamable-http",
@@ -21,7 +20,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/bukely/peerbox:0.2.10",
+      "identifier": "ghcr.io/bukely/peerbox",
       "transport": {
         "type": "streamable-http",
         "url": "http://localhost:{PORT}/mcp"
