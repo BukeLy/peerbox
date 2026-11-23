@@ -7,7 +7,7 @@ from itertools import count
 
 from asyncpg import Connection, UniqueViolationError
 
-from mailbox import Address, Refused, wake_known_by
+from messages import Address, Refused, wake_known_by
 
 # Letters, digits and single hyphens, as in GitHub's logins; matched in any case.
 USERNAME = r"[A-Za-z0-9]+(-[A-Za-z0-9]+)*"
