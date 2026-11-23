@@ -81,10 +81,10 @@ jobs:
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "$archive"
           tar xzf "$archive" mcp-publisher
-      # server.json in the repo names the last version; the release's tag names this one
+      # server.json leaves the version out; the release's tag gives it to the listing and its image
       - run: |
           v="${GITHUB_REF_NAME#v}"
-          jq --arg v "$v" '.version = $v | .packages[0].identifier = "ghcr.io/bukely/peerbox:" + $v' server.json > server.tmp
+          jq --arg v "$v" '.version = $v | .packages[0].identifier += ":" + $v' server.json > server.tmp
           mv server.tmp server.json
       - run: ./mcp-publisher login github-oidc
       - run: ./mcp-publisher publish
