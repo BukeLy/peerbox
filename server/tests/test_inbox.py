@@ -1497,6 +1497,33 @@ async def test_two_of_your_agents_talk_in_one_conversation(db):
     assert [m["text"] for m in transcript] == ["run the suite", "412 passed"]
 
 
+async def test_each_conversation_counts_only_what_waits_in_it(db):
+    turing, church = signed_in("turing"), signed_in("church")
+    kleene = signed_in("kleene")
+    await inbox(agent="bot", token=turing, db=db)
+    await whoami(token=church, db=db)
+    await send("church", "hello", token=turing, db=db)
+    await send("turing", "first", token=church, db=db)
+    await send("turing/bot", "second", token=church, db=db)
+    seen = await send("turing", "old news", token=kleene, db=db)
+    await mark_read([seen["id"]], token=turing, db=db)
+    await send("turing", "news", token=kleene, db=db)
+
+    with browser(await account_id(db, "turing")) as page:
+        listed = page.get("/api/conversations").json()["conversations"]
+        sent = {
+            m["text"]: m["sent_at"]
+            for key in ("church", "kleene")
+            for m in page.get(f"/api/conversations/{key}").json()["messages"]
+        }
+    assert [
+        (c["key"], c["sides"], c["waiting"], c["waiting_since"]) for c in listed
+    ] == [
+        ("kleene", ["turing"], 1, sent["news"]),
+        ("church", ["turing", "turing/bot"], 2, sent["first"]),
+    ]
+
+
 async def test_a_group_conversation_shows_every_members_messages(db):
     turing, church = signed_in("turing"), signed_in("church")
     group = (await create_group("compilers", token=turing, db=db))["group"]
