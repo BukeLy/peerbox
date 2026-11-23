@@ -719,19 +719,8 @@ async def _make_contacts(db: Connection, person: int, other: int) -> None:
 
 async def add_contact(
     db: Connection, asker: Address, other: Address, greeting: str | None
-) -> dict:
-    """Ask other to become asker's contact: their username and GitHub login, since
-    anyone may take any free username, and what became of the request."""
-    return {
-        "username": str(other),
-        "github": await db.fetchval("select github($1)", other.person),
-        "status": await _ask(db, asker, other, greeting),
-    }
-
-
-async def _ask(
-    db: Connection, asker: Address, other: Address, greeting: str | None
 ) -> str:
+    """Ask other to become asker's contact; what became of the request."""
     unblocked = await _unblock(db, asker.person, other.person)
     if await _is_contact(db, asker.person, other.person):
         if unblocked:
@@ -805,19 +794,19 @@ async def answer(db: Connection, you: Address, request_id: int, accept: bool) ->
         return f"accepted: now in {group}"
 
 
-async def remove_contact(db: Connection, person: int, other: Address) -> None:
+async def remove_contact(db: Connection, person: int, other: int) -> None:
     """Remove a contact and block them, so neither can write to the other."""
     async with db.transaction():
         await db.execute(
-            f"delete from contacts where (a, b) = ({_PAIR})", person, other.person
+            f"delete from contacts where (a, b) = ({_PAIR})", person, other
         )
         await db.execute(
             "insert into blocks (blocker, blocked) values ($1, $2) "
             "on conflict do nothing",
             person,
-            other.person,
+            other,
         )
-        await _wake(db, [person, other.person])
+        await _wake(db, [person, other])
 
 
 async def record_memberships(db: Connection, person: int, orgs: list[str]) -> None:

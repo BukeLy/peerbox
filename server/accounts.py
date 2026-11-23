@@ -23,11 +23,46 @@ def github_claims(user: dict) -> dict:
 
 async def sign_in(db: Connection, claims: dict) -> Address:
     """The address of the person these GitHub claims name. Their first sign-in makes
-    their account."""
-    person, username = await _account(
-        db, "github", claims["sub"], claims["login"], claims.get("name")
-    )
-    return Address(person, username=username)
+    their account, with their GitHub name as its display name and the first free one
+    of login, login-2, login-3 and so on, in the username format, as its username.
+    Each sign-in keeps the GitHub login shown for them current."""
+    subject, login = claims["sub"], claims["login"]
+    for n in count(1):
+        row = await db.fetchrow(
+            "with refreshed as (update identities set login = $2 "
+            "where (provider, subject) = ('github', $1) and login <> $2) "
+            "select u.id, u.username from identities i join users u on u.id = i.user_id "
+            "where (i.provider, i.subject) = ('github', $1)",
+            subject,
+            login,
+        )
+        if row is not None:
+            return Address(row["id"], username=row["username"])
+        username = _username(login, n)
+        try:
+            async with db.transaction():
+                person = await db.fetchval(
+                    "insert into users (username, name) values ($1, $2) returning id",
+                    username,
+                    claims.get("name"),
+                )
+                await db.execute(
+                    "insert into usernames (username, user_id) values ($1, $2)",
+                    username,
+                    person,
+                )
+                await db.execute(
+                    "insert into identities (provider, subject, user_id, login) "
+                    "values ('github', $1, $2, $3)",
+                    subject,
+                    person,
+                    login,
+                )
+            return Address(person, username=username)
+        except UniqueViolationError:
+            # The username is someone's, or a sign-in at the same time made this
+            # account; the next round finds which.
+            continue
 
 
 def _username(login: str, n: int) -> str:
@@ -37,53 +72,6 @@ def _username(login: str, n: int) -> str:
     base = re.sub(r"[^A-Za-z0-9]+", "-", login).strip("-") or "user"
     suffix = "" if n == 1 else f"-{n}"
     return base[: MAX_USERNAME - len(suffix)].rstrip("-") + suffix
-
-
-async def _account(
-    db: Connection, provider: str, subject: str, login: str, name: str | None
-) -> tuple[int, str]:
-    """The id and username of the account that signs in as subject, made at its first
-    sign-in with name as its display name and the first free one of login, login-2,
-    login-3 and so on, in the username format, as its username. Keeps login, the
-    provider's name for them, current."""
-    for n in count(1):
-        row = await db.fetchrow(
-            "with refreshed as (update identities set login = $3 "
-            "where (provider, subject) = ($1, $2) and login <> $3) "
-            "select u.id, u.username from identities i join users u on u.id = i.user_id "
-            "where (i.provider, i.subject) = ($1, $2)",
-            provider,
-            subject,
-            login,
-        )
-        if row is not None:
-            return row["id"], row["username"]
-        username = _username(login, n)
-        try:
-            async with db.transaction():
-                person = await db.fetchval(
-                    "insert into users (username, name) values ($1, $2) returning id",
-                    username,
-                    name,
-                )
-                await db.execute(
-                    "insert into usernames (username, user_id) values ($1, $2)",
-                    username,
-                    person,
-                )
-                await db.execute(
-                    "insert into identities (provider, subject, user_id, login) "
-                    "values ($1, $2, $3, $4)",
-                    provider,
-                    subject,
-                    person,
-                    login,
-                )
-            return person, username
-        except UniqueViolationError:
-            # The username is someone's, or a sign-in at the same time made this
-            # account; the next round finds which.
-            continue
 
 
 async def resolve(db: Connection, text: str) -> Address:

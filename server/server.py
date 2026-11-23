@@ -80,10 +80,8 @@ FromAgent = Annotated[
         "have read its inbox once. Leave it out to write as yourself."
     ),
 ]
-Username = Annotated[str, Field(pattern=rf"^{accounts.USERNAME}$")]
-NewUsername = Annotated[
-    str,
-    Field(pattern=rf"^{accounts.USERNAME}$", max_length=accounts.MAX_USERNAME),
+Username = Annotated[
+    str, Field(pattern=rf"^{accounts.USERNAME}$", max_length=accounts.MAX_USERNAME)
 ]
 IN_A_GROUP = (
     "In a group (a message whose `to` is a #id), answer only what asks you, and send "
@@ -256,7 +254,7 @@ async def whoami(
 @mcp.tool(annotations=IDEMPOTENT_WRITE)
 async def set_profile(
     username: Annotated[
-        NewUsername | SkipJsonSchema[None],
+        Username | SkipJsonSchema[None],
         Field(description="Your new username: letters, digits and single hyphens"),
     ] = None,
     name: Annotated[
@@ -487,9 +485,9 @@ async def add_contact(
     any free username, so tell your user the GitHub login this returns.
     """
     you = await me(db, token, from_agent)
-    return await mailbox.add_contact(
-        db, you, await accounts.resolve(db, username), greeting
-    )
+    other = await accounts.resolve(db, username)
+    status = await mailbox.add_contact(db, you, other, greeting)
+    return await accounts.profile(db, other.person) | {"status": status}
 
 
 @mcp.tool(annotations=WRITE)
@@ -528,7 +526,7 @@ async def remove_contact(
     """Remove a contact and block them, so neither of you can write to the other.
     Ask your user first. add_contact undoes it."""
     other = await accounts.resolve(db, username)
-    await mailbox.remove_contact(db, (await me(db, token)).person, other)
+    await mailbox.remove_contact(db, (await me(db, token)).person, other.person)
     return {"removed": str(other)}
 
 
