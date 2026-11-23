@@ -7,10 +7,10 @@ The tests need a Postgres database they are allowed to empty:
 ```sh
 cd server
 uv sync
-DATABASE_URL=postgresql://localhost/peerbox uv run pytest
+DATABASE_URL='postgresql://localhost/peerbox?sslmode=disable' uv run pytest
 ```
 
-They apply `schema.sql` to that database and truncate its tables. Set `PEERBOX_TEST_ORG` to an organisation your `gh` login belongs to, and one more test checks a real membership. CI runs the same tests on every pull request.
+They apply `schema.sql` to that database and truncate its tables. `sslmode=disable` skips a TLS handshake a local database doesn't need, which can otherwise fail a test that cancels a query just before its pool closes. Set `PEERBOX_TEST_ORG` to an organisation your `gh` login belongs to, and one more test checks a real membership. CI runs the same tests on every pull request.
 
 The attachment tests also need a MinIO with a bucket named `peerbox`, and wait up to a minute for it to appear; without one they fail and the rest still pass:
 

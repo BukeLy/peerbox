@@ -37,4 +37,7 @@ jobs:
       - run: uvx ruff@0.17.6 format --check .
       - run: uv run --locked pytest
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          # No TLS to negotiate here. Negotiating also fails a test whose pool closes
+          # while asyncpg still connects to cancel a query, with "unexpected
+          # connection_lost() call".
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable
