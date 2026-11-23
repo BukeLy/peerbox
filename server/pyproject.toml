@@ -34,6 +34,3 @@ extend-immutable-calls = [
     "fastmcp.dependencies.CurrentContext",
     "fastmcp.dependencies.Depends",
 ]
-
-[tool.ruff.lint.isort]
-known-first-party = ["mailbox"]  # ours, not the standard library's mailbox

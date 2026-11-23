@@ -20,7 +20,7 @@ from fastmcp.server.lifespan import lifespan
 from fastmcp.utilities.logging import get_logger
 
 import accounts
-import mailbox
+import messages
 
 HERE = Path(__file__).parent
 logger = get_logger("peerbox")
@@ -83,7 +83,7 @@ async def _expire_hourly() -> None:
     while True:
         try:
             async with get_db() as db:
-                await mailbox.expire(db)
+                await messages.expire(db)
         except Exception:
             logger.exception("Deleting old messages failed")
         await asyncio.sleep(3600)
@@ -108,7 +108,7 @@ async def database(server):
         listener = await connect(DATABASE_URL)
         expiry = asyncio.create_task(_expire_hourly())
         try:
-            await listener.add_listener(mailbox.CHANNEL, waiters.wake)
+            await listener.add_listener(messages.CHANNEL, waiters.wake)
             yield {}
         finally:
             expiry.cancel()
@@ -136,11 +136,11 @@ async def admit(token: str, claims: dict) -> bool:
         },
         timeout=10,
     ) as github:
-        if mailbox.GITHUB_ORG is None:
+        if messages.GITHUB_ORG is None:
             await _record_organisations(github, claims)
             admitted = True
         else:
-            admitted = await _member_or_guest(github, mailbox.GITHUB_ORG)
+            admitted = await _member_or_guest(github, messages.GITHUB_ORG)
     if admitted:
         now = time.monotonic()
         for stale in [held for held, until in _admitted_until.items() if until <= now]:
@@ -179,4 +179,4 @@ async def _record_organisations(github: httpx2.AsyncClient, claims: dict) -> Non
         page = installed.links.get("next", {}).get("url")
     async with get_db() as db:
         you = await accounts.sign_in(db, claims)
-        await mailbox.record_memberships(db, you.person, orgs)
+        await messages.record_memberships(db, you.person, orgs)

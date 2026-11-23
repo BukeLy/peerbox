@@ -51,7 +51,7 @@ from pydantic_core import from_json, to_json
 
 import accounts
 import instance
-import mailbox
+import messages
 import panel
 from instance import BASE_URL, DATABASE_URL, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
 
@@ -235,10 +235,10 @@ mcp = FastMCP(
 
 async def me(
     db: Connection, token: AccessToken, agent: str | None = None
-) -> mailbox.Address:
+) -> messages.Address:
     """The caller's address: them, or one of their agents, which must have read its
     inbox once."""
-    return await mailbox.as_agent(db, await accounts.sign_in(db, token.claims), agent)
+    return await messages.as_agent(db, await accounts.sign_in(db, token.claims), agent)
 
 
 @mcp.tool(annotations=READ)
@@ -293,7 +293,7 @@ async def set_remark(
     """
     you = await me(db, token)
     other = await accounts.resolve(db, username)
-    kept = await mailbox.set_remark(db, you.person, other, remark)
+    kept = await messages.set_remark(db, you.person, other, remark)
     return {"username": str(other), "remark": kept}
 
 
@@ -312,7 +312,7 @@ async def contacts(
     name fits, or more than one does, ask your user who they mean. To reach
     someone who is not a contact, ask with add_contact.
     """
-    return await mailbox.contacts_and_groups(db, (await me(db, token)).person)
+    return await messages.contacts_and_groups(db, (await me(db, token)).person)
 
 
 @mcp.tool(annotations=WRITE)
@@ -348,7 +348,7 @@ async def send(
     group, with `reply_to` set to its id.
     """
     you = await me(db, token, from_agent)
-    return await mailbox.send(
+    return await messages.send(
         db, you, await accounts.resolve(db, to), text, reply_to, attachments
     )
 
@@ -377,7 +377,7 @@ async def inbox(
     their ids, and the same agent you read as, once you have handled them.
     """
     you = replace(await me(db, token), agent=agent)
-    return {"notice": NOTICE} | await mailbox.inbox(db, you, limit)
+    return {"notice": NOTICE} | await messages.inbox(db, you, limit)
 
 
 @mcp.tool(annotations=IDEMPOTENT_WRITE)
@@ -399,7 +399,7 @@ async def mark_read(
     address you read them as are marked.
     """
     you = await me(db, token, agent)
-    return {"marked_read": await mailbox.mark_read(db, you, ids)}
+    return {"marked_read": await messages.mark_read(db, you, ids)}
 
 
 @mcp.tool(annotations=WRITE)
@@ -418,7 +418,7 @@ async def create_group(
     agents with invite.
     """
     you = await me(db, token, from_agent)
-    return {"group": str(await mailbox.create_group(db, you, name))}
+    return {"group": str(await messages.create_group(db, you, name))}
 
 
 @mcp.tool(annotations=IDEMPOTENT_WRITE)
@@ -432,7 +432,7 @@ async def invite(
     """Add an address to a group you are in: one of your own joins at once; a
     contact's is invited and joins when they accept."""
     you = await me(db, token, from_agent)
-    status = await mailbox.invite(
+    status = await messages.invite(
         db, you, await accounts.resolve(db, group), await accounts.resolve(db, address)
     )
     return {"group": group, "address": address, "status": status}
@@ -462,7 +462,7 @@ async def leave(
     """
     you = await me(db, token, from_agent)
     member = await accounts.resolve(db, address) if address else you
-    await mailbox.leave(db, you, await accounts.resolve(db, group), member)
+    await messages.leave(db, you, await accounts.resolve(db, group), member)
     return {"group": group, "removed": str(member)}
 
 
@@ -486,7 +486,7 @@ async def add_contact(
     """
     you = await me(db, token, from_agent)
     other = await accounts.resolve(db, username)
-    status = await mailbox.add_contact(db, you, other, greeting)
+    status = await messages.add_contact(db, you, other, greeting)
     return await accounts.profile(db, other.person) | {"status": status}
 
 
@@ -511,7 +511,7 @@ async def answer(
     from any of them settles it.
     """
     you = await me(db, token, from_agent)
-    status = await mailbox.answer(db, you, request_id, accept)
+    status = await messages.answer(db, you, request_id, accept)
     return {"request": request_id, "status": status}
 
 
@@ -526,7 +526,7 @@ async def remove_contact(
     """Remove a contact and block them, so neither of you can write to the other.
     Ask your user first. add_contact undoes it."""
     other = await accounts.resolve(db, username)
-    await mailbox.remove_contact(db, (await me(db, token)).person, other.person)
+    await messages.remove_contact(db, (await me(db, token)).person, other.person)
     return {"removed": str(other)}
 
 
@@ -560,7 +560,7 @@ async def delete_account(
     you = await me(db, token)
     # Before the bucket's deletes, so one of them failing can't skip it.
     signed_out = await revoke_grant(token.token)
-    await mailbox.delete_account(db, you.person)
+    await messages.delete_account(db, you.person)
     return {"deleted": you.username, "signed_out": signed_out}
 
 
@@ -617,7 +617,7 @@ async def attach(
             try:
                 data, content_type = await fetch_public(source)
             except httpx2.HTTPError as error:
-                raise mailbox.Refused(f"Could not fetch the file: {error}") from error
+                raise messages.Refused(f"Could not fetch the file: {error}") from error
         named = (
             name
             or (file and file.file_name)
@@ -633,7 +633,7 @@ async def attach(
         )
         return named, typed, data
 
-    return await mailbox.attach(db, you, content)
+    return await messages.attach(db, you, content)
 
 
 SHOWN_AS_IMAGES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
@@ -650,7 +650,7 @@ async def open_attachment(
 ) -> Image | EmbeddedResource:
     """Open an attachment of a message you sent or received, to see what it holds."""
     person = (await me(db, token)).person
-    name, mime, data = await mailbox.open_attachment(db, person, id)
+    name, mime, data = await messages.open_attachment(db, person, id)
     if mime in SHOWN_AS_IMAGES:
         return Image(data=data, format=mime.removeprefix("image/"))
     uri = f"attachment://{id}/{name}"
@@ -823,7 +823,7 @@ SUBSCRIPTION_KEY = instance.fernet("peerbox-event-subscriptions")
 async def save(subscription: Subscription) -> None:
     """Store the subscription so a restarted server resumes its deliveries."""
     async with instance.get_db() as db:
-        await mailbox.save_subscription(
+        await messages.save_subscription(
             db,
             subscription.id,
             subscription.expires_at,
@@ -930,11 +930,11 @@ async def fetch_public(url: str) -> tuple[bytes, str | None]:
                 data = bytearray()
                 async for chunk in response.aiter_bytes():
                     data += chunk
-                    if len(data) > mailbox.MAX_ATTACHMENT:
-                        raise mailbox.Refused(mailbox.TOO_LARGE)
+                    if len(data) > messages.MAX_ATTACHMENT:
+                        raise messages.Refused(messages.TOO_LARGE)
                 content_type = response.headers.get("content-type", "")
                 return bytes(data), content_type.split(";")[0] or None
-    raise mailbox.Refused(f"{url} redirects too many times.")
+    raise messages.Refused(f"{url} redirects too many times.")
 
 
 async def verify(subscription: Subscription) -> None:
@@ -1022,7 +1022,7 @@ class MessageEvents(ServerExtension):
     @asynccontextmanager
     async def lifespan(self):
         async with instance.get_db() as db:
-            states = await mailbox.subscriptions(db)
+            states = await messages.subscriptions(db)
         for state in states:
             # A rotated GITHUB_CLIENT_SECRET drops the row; the client resubscribes.
             with suppress(InvalidToken):
@@ -1102,7 +1102,7 @@ class MessageEvents(ServerExtension):
                 truncated=False,
             )
         async with instance.get_db() as db:
-            position, truncated = await mailbox.start_position(
+            position, truncated = await messages.start_position(
                 db,
                 None if params.cursor is None else int(params.cursor),
                 params.max_age_ms,
@@ -1154,14 +1154,14 @@ class MessageEvents(ServerExtension):
 
     async def pump(self, subscription: Subscription) -> None:
         """Deliver the subscription's new deliveries in order until it expires."""
-        reader = mailbox.Address(subscription.person, subscription.agent)
+        reader = messages.Address(subscription.person, subscription.agent)
         try:
             with instance.waiters.watch(subscription.person) as woken:
                 while datetime.now(UTC) < subscription.expires_at:
                     woken.clear()
                     try:
                         async with instance.get_db() as db:
-                            events = await mailbox.waiting(
+                            events = await messages.waiting(
                                 db, reader, subscription.position
                             )
                         for event in events:

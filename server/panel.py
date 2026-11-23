@@ -17,7 +17,7 @@ from starlette.responses import FileResponse, RedirectResponse, Response
 
 import accounts
 import instance
-import mailbox
+import messages
 
 HERE = Path(__file__).parent
 CALLBACK_URL = f"{instance.BASE_URL}/login/callback"
@@ -152,14 +152,14 @@ def install(mcp) -> None:
 
     async def me(db, person: int, request: Request) -> dict | None:
         shown = await accounts.profile(db, person)
-        return shown and shown | await mailbox.contacts_and_groups(db, person)
+        return shown and shown | await messages.contacts_and_groups(db, person)
 
     async def conversations(db, person: int, request: Request) -> dict:
-        return await mailbox.conversations(db, person)
+        return await messages.conversations(db, person)
 
     async def history(db, person: int, request: Request) -> dict:
         before = request.query_params.get("before", "")
-        return await mailbox.history(
+        return await messages.history(
             db,
             person,
             request.path_params["key"],

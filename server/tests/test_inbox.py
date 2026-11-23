@@ -36,7 +36,7 @@ os.environ.setdefault("S3_REGION", "us-east-1")
 import accounts
 import bucket
 import instance
-import mailbox
+import messages
 import panel
 import server
 from server import (
@@ -267,8 +267,8 @@ async def remarks(token, db) -> dict[str, str]:
 
 async def test_a_remark_is_private_names_one_person_and_outlives_removal(db, public):
     turing, church = signed_in("turing"), signed_in("church")
-    await mailbox.record_memberships(db, await account_id(db, "turing"), ["acme"])
-    await mailbox.record_memberships(db, await account_id(db, "church"), ["acme"])
+    await messages.record_memberships(db, await account_id(db, "turing"), ["acme"])
+    await messages.record_memberships(db, await account_id(db, "church"), ["acme"])
     await whoami(token=signed_in("kleene"), db=db)
 
     await set_remark("Turing", "Prof", token=church, db=db)
@@ -290,11 +290,11 @@ async def test_contacts_lists_the_members_of_your_groups_who_are_no_contacts(
     db, public
 ):
     turing, church = signed_in("turing"), signed_in("church")
-    await mailbox.record_memberships(
+    await messages.record_memberships(
         db, await account_id(db, "turing"), ["acme", "recursion"]
     )
-    await mailbox.record_memberships(db, await account_id(db, "church"), ["acme"])
-    await mailbox.record_memberships(db, await account_id(db, "kleene"), ["recursion"])
+    await messages.record_memberships(db, await account_id(db, "church"), ["acme"])
+    await messages.record_memberships(db, await account_id(db, "kleene"), ["recursion"])
     group = (await create_group("logic", token=turing, db=db))["group"]
     await join(db, group, turing, "church", "kleene")
 
@@ -349,7 +349,7 @@ def github_token():
 
 
 async def test_active_org_member_is_admitted(github_token, monkeypatch):
-    monkeypatch.setattr(mailbox, "GITHUB_ORG", os.environ["PEERBOX_TEST_ORG"])
+    monkeypatch.setattr(messages, "GITHUB_ORG", os.environ["PEERBOX_TEST_ORG"])
     # The login only matters without GITHUB_ORG, which records its organisations.
     token = AccessToken(
         token=github_token, client_id="test", scopes=[], claims={"login": "member"}
@@ -370,8 +370,8 @@ async def test_members_and_plugin_repo_guests_are_admitted(
     monkeypatch, membership, plugin_repo, admitted
 ):
     routes = {
-        f"/user/memberships/orgs/{mailbox.GITHUB_ORG}": membership,
-        f"/repos/{mailbox.GITHUB_ORG}/peerbox-plugin": plugin_repo,
+        f"/user/memberships/orgs/{messages.GITHUB_ORG}": membership,
+        f"/repos/{messages.GITHUB_ORG}/peerbox-plugin": plugin_repo,
     }
 
     def github(request):
@@ -589,7 +589,7 @@ async def test_an_ended_subscription_is_deleted_by_the_next_expiry(db, webhook):
             "where id = $1",
             ended,
         )
-        await mailbox.expire(db)
+        await messages.expire(db)
     assert [
         row["id"] for row in await db.fetch("select id from event_subscriptions")
     ] == [running]
@@ -753,7 +753,7 @@ async def test_owner_address_hands_over_on_leaving(db):
     await leave(group, "church/bot", token=church, db=db)
     assert await contacts(token=church, db=db) == {"people": ANY, "groups": []}
     # nobody is left and nothing was said, so the next expiry deletes the group
-    await mailbox.expire(db)
+    await messages.expire(db)
     assert await db.fetchval("select count(*) from groups") == 0
 
 
@@ -777,14 +777,14 @@ async def test_an_emptied_group_keeps_its_messages_until_they_expire(db):
     await leave(group, token=church, db=db)
     await leave(group, token=turing, db=db)
 
-    await mailbox.expire(db)
+    await messages.expire(db)
     with browser(await account_id(db, "church")) as page:
         [talk] = page.get("/api/conversations").json()["conversations"]
         assert (talk["key"], talk["name"]) == (group, "compilers")
         [kept] = page.get(f"/api/conversations/{quote(group)}").json()["messages"]
         assert kept["text"] == "plan"
     await db.execute("update messages set created_at = now() - interval '31 days'")
-    await mailbox.expire(db)
+    await messages.expire(db)
     assert await db.fetchval("select count(*) from groups") == 0
 
 
@@ -809,7 +809,7 @@ async def test_a_reply_to_a_deleted_message_is_refused(db):
     await whoami(token=turing, db=db)
     question = await send("turing", "old question", token=church, db=db)
     await db.execute("update messages set created_at = now() - interval '31 days'")
-    await mailbox.expire(db)
+    await messages.expire(db)
     with pytest.raises(ToolError, match="No message"):
         await send("church", "late", reply_to=question["id"], token=turing, db=db)
 
@@ -828,7 +828,7 @@ async def test_expiry_deletes_old_messages_and_keeps_replies_to_them(db):
         [question["id"], answer["id"]],
     )
 
-    await mailbox.expire(db)
+    await messages.expire(db)
     [thanks] = (await inbox(token=turing, db=db))["messages"]
     assert (thanks["text"], thanks["reply_to"]) == ("thanks", None)
     assert await db.fetchval("select count(*) from deliveries") == 1
@@ -837,7 +837,7 @@ async def test_expiry_deletes_old_messages_and_keeps_replies_to_them(db):
 @pytest.fixture
 def public(monkeypatch):
     """The public instance, where only contacts and fellow group members write."""
-    monkeypatch.setattr(mailbox, "GITHUB_ORG", None)
+    monkeypatch.setattr(messages, "GITHUB_ORG", None)
 
 
 async def requests_of(token, db, agent=None) -> list[dict]:
@@ -927,7 +927,7 @@ async def test_unanswered_requests_expire(db, public):
     await whoami(token=turing, db=db)
     await add_contact("turing", token=signed_in("church"), db=db)
     await db.execute("update requests set created_at = now() - interval '31 days'")
-    await mailbox.expire(db)
+    await messages.expire(db)
     assert await requests_of(turing, db) == []
 
 
@@ -942,8 +942,8 @@ async def test_asking_someone_who_asked_you_makes_contacts_at_once(db, public):
 
 async def test_removing_a_contact_blocks_them_despite_a_shared_organisation(db, public):
     turing, church = signed_in("turing"), signed_in("church")
-    await mailbox.record_memberships(db, await account_id(db, "turing"), ["acme"])
-    await mailbox.record_memberships(db, await account_id(db, "church"), ["acme"])
+    await messages.record_memberships(db, await account_id(db, "turing"), ["acme"])
+    await messages.record_memberships(db, await account_id(db, "church"), ["acme"])
     await send("turing", "hi", token=church, db=db)
     added = await add_contact("turing", token=church, db=db)
     assert added["status"] == "already your contact"
@@ -961,8 +961,8 @@ async def test_removing_a_contact_blocks_them_despite_a_shared_organisation(db, 
 
 async def test_an_invited_contact_joins_on_accepting(db, public):
     turing, church = signed_in("turing"), signed_in("church")
-    await mailbox.record_memberships(db, await account_id(db, "turing"), ["acme"])
-    await mailbox.record_memberships(db, await account_id(db, "church"), ["acme"])
+    await messages.record_memberships(db, await account_id(db, "turing"), ["acme"])
+    await messages.record_memberships(db, await account_id(db, "church"), ["acme"])
     await whoami(token=signed_in("kleene"), db=db)
     await inbox(agent="bot", token=church, db=db)
     group = (await create_group("compilers", token=turing, db=db))["group"]
@@ -1036,12 +1036,14 @@ async def test_deleting_an_account_wakes_who_saw_its_copies_in_groups_it_left(
 ):
     # church shares an organisation with turing only: kleene and post are no
     # contacts of church's.
-    await mailbox.record_memberships(
+    await messages.record_memberships(
         db, await account_id(db, "turing"), ["lambda", "recursion"]
     )
-    await mailbox.record_memberships(db, await account_id(db, "church"), ["lambda"])
+    await messages.record_memberships(db, await account_id(db, "church"), ["lambda"])
     for login in ("kleene", "post"):
-        await mailbox.record_memberships(db, await account_id(db, login), ["recursion"])
+        await messages.record_memberships(
+            db, await account_id(db, login), ["recursion"]
+        )
     turing, church = signed_in("turing"), signed_in("church")
     group = (await create_group("logic", token=turing, db=db))["group"]
     await join(db, group, turing, "church", "kleene", "post")
@@ -1103,7 +1105,7 @@ async def test_anyone_is_admitted_publicly_with_their_installed_organisations(
 async def test_a_github_outage_keeps_the_recorded_organisations(
     db, monkeypatch, public
 ):
-    await mailbox.record_memberships(db, await account_id(db, "turing"), ["acme"])
+    await messages.record_memberships(db, await account_id(db, "turing"), ["acme"])
     down = httpx2.MockTransport(lambda request: httpx2.Response(503))
     client = httpx2.AsyncClient
     monkeypatch.setattr(
@@ -1235,7 +1237,7 @@ async def test_an_attachment_another_send_claimed_meanwhile_is_refused(db, monke
     async def checked_before_either_sent(db, owner, ids):
         return [(upload["id"], 6)]
 
-    monkeypatch.setattr(mailbox, "_sendable", checked_before_either_sent)
+    monkeypatch.setattr(messages, "_sendable", checked_before_either_sent)
     await send("turing", "one", attachments=[upload["id"]], token=church, db=db)
     with pytest.raises(ToolError, match="sent once"):
         await send("turing", "two", attachments=[upload["id"]], token=church, db=db)
@@ -1305,7 +1307,7 @@ async def test_signing_in_to_the_panel_sets_a_session(db, monkeypatch):
     replies = {
         "/login/oauth/access_token": {"access_token": os.urandom(8).hex()},
         "/user": {"id": 1, "login": "turing", "name": "Alan Turing"},
-        f"/user/memberships/orgs/{mailbox.GITHUB_ORG}": {"state": "active"},
+        f"/user/memberships/orgs/{messages.GITHUB_ORG}": {"state": "active"},
     }
     client = httpx2.AsyncClient
     monkeypatch.setattr(
@@ -1451,10 +1453,10 @@ async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
             ["turing", "turing/bot"],
             1,
         )
-        messages = page.get("/api/conversations/church").json()["messages"]
+        transcript = page.get("/api/conversations/church").json()["messages"]
     shown = [
         (m["text"], [(d["to"], d["read_at"] is not None) for d in m["deliveries"]])
-        for m in messages
+        for m in transcript
     ]
     assert shown == [
         ("review the plan", [("turing/bot", True)]),
@@ -1462,7 +1464,7 @@ async def test_the_panel_shows_each_delivery_without_marking_it_read(db):
         ("lunch?", [("turing", False)]),
     ]
     async with httpx2.AsyncClient() as client:
-        file = messages[0]["attachments"][0]
+        file = transcript[0]["attachments"][0]
         assert (await client.get(file["url"])).content == b"step 1"
     expires = datetime.fromisoformat(file["url_expires_at"])
     assert abs(expires - in_an_hour) < timedelta(seconds=5)
@@ -1491,8 +1493,8 @@ async def test_two_of_your_agents_talk_in_one_conversation(db):
             "turing/codex",
             ["turing/claude-code", "turing/codex"],
         )
-        messages = page.get("/api/conversations/turing/codex").json()["messages"]
-    assert [m["text"] for m in messages] == ["run the suite", "412 passed"]
+        transcript = page.get("/api/conversations/turing/codex").json()["messages"]
+    assert [m["text"] for m in transcript] == ["run the suite", "412 passed"]
 
 
 async def test_a_group_conversation_shows_every_members_messages(db):
@@ -1505,15 +1507,15 @@ async def test_a_group_conversation_shows_every_members_messages(db):
     with browser(await account_id(db, "kleene")) as page:
         [talk] = page.get("/api/conversations").json()["conversations"]
         assert (talk["key"], talk["name"], talk["waiting"]) == (group, "compilers", 2)
-        messages = page.get(f"/api/conversations/{quote(group)}").json()["messages"]
+        transcript = page.get(f"/api/conversations/{quote(group)}").json()["messages"]
         earlier = page.get(
             f"/api/conversations/{quote(group)}?before={agreed['id']}"
         ).json()["messages"]
-    assert [(m["from"], m["text"]) for m in messages] == [
+    assert [(m["from"], m["text"]) for m in transcript] == [
         ("turing", "standup at ten"),
         ("church", "agreed"),
     ]
-    assert [d["to"] for d in messages[0]["deliveries"]] == ["church", "kleene"]
+    assert [d["to"] for d in transcript[0]["deliveries"]] == ["church", "kleene"]
     assert [m["text"] for m in earlier] == ["standup at ten"]
 
 
