@@ -38,6 +38,9 @@ create table if not exists remarks (
     primary key (owner, person)
 );
 
+-- shortcut: lower() folds letters such as Ä and Σ only where the database's locale
+-- knows them (Azure's default en_US.utf8 does); under C, Ä and ä are two remarks. Index
+-- lower(remark collate pg_c_utf8) once peerbox needs Postgres 17.
 create unique index if not exists remarks_remark on remarks (owner, lower(remark));
 
 create table if not exists agents (
