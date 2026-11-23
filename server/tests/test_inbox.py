@@ -486,8 +486,8 @@ async def test_an_agents_first_inbox_read_wakes_its_owner(db):
 
 
 @pytest.fixture
-def webhook(monkeypatch):
-    """Turing's webhook endpoint; returns the event bodies it receives."""
+async def webhook(monkeypatch):
+    """Turing's webhook endpoint; yields the event bodies it receives."""
     deliveries = []
 
     async def post(url, secrets, subscription, message_id, body):
@@ -501,8 +501,13 @@ def webhook(monkeypatch):
     monkeypatch.setattr(server, "post_webhook", post)
     monkeypatch.setattr(server, "events_principal", signed_in_as_turing)
     monkeypatch.setattr(server.events, "subscriptions", {})
-    monkeypatch.setattr(server.events, "pumps", {})
-    return deliveries
+    pumps = {}
+    monkeypatch.setattr(server.events, "pumps", pumps)
+    yield deliveries
+    # Stopped here, or a pump's query in flight loses its connection with the loop.
+    for pump in pumps.values():
+        pump.cancel()
+    await asyncio.gather(*pumps.values(), return_exceptions=True)
 
 
 HOOK = "https://client.example/hook"
