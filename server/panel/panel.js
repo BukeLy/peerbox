@@ -65,28 +65,33 @@
   const owner = (a) => a.split("/")[0];
   const agentOf = (a) => a.split("/")[1];
   const mine = (a) => kind(a) !== "group" && owner(a) === data.me;
-  // label: you as "You", your agents by name, a group by its name, anyone else by their address.
+  // called: what you call a person, your remark for them or else their username.
+  // label: you as "You", your agents by name, a group by its name, anyone else as you call them.
   // addr: the label as an address; another person's agent keeps its owner, quiet. detail: the line under a member's address.
   // noun: the line under the details pane's title. facts: the details pane's lines about it.
   // subtitle: the line under the conversation's title. where: how the finding names the conversation, around a link to it.
   // in: what an announcement of a new message adds after its sender.
+  const called = (p) => data.people[p]?.remark ?? p;
   const named = (a) => `<span class="addr">${esc(label(a))}</span>`;
   const direct = { where: (link) => `with ${link}`, in: () => "" };
   const KIND = {
     person: {
       glyph: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3.2 13.5c.6-2.5 2.5-3.9 4.8-3.9s4.2 1.4 4.8 3.9"/>',
-      label: (a) => (a === data.me ? "You" : a),
+      label: (a) => (a === data.me ? "You" : called(a)),
       addr: named,
       detail: (a) => data.people[a]?.name ?? "Person",
       noun: () => "Person",
-      facts: (a, c) => `<p class="kv"><span>Name</span><span>${esc(data.people[a]?.name ?? "—")}</span></p>${members("Your side", c?.sides ?? [], a)}`,
+      // GitHub vouches for the login, not the username, which anyone may choose
+      facts: (a, c) => `<p class="kv"><span>Username</span><span>${esc(a)}</span></p>
+        <p class="kv"><span>Display name</span><span>${esc(data.people[a]?.name ?? "—")}</span></p>
+        <p class="kv"><span>GitHub</span><span>${data.people[a]?.github ? `✓ ${esc(data.people[a].github)}` : "—"}</span></p>${members("Your side", c?.sides ?? [], a)}`,
       subtitle: (a) => (a === data.me ? "Messages to yourself" : data.people[a]?.name ?? "Person"),
       ...direct,
     },
     agent: {
       glyph: '<rect x="2.5" y="4.5" width="11" height="9" rx="3"/><path d="M6 8.3v1.4M10 8.3v1.4M8 4.5V2.3"/>',
-      label: (a) => (mine(a) ? agentOf(a) : a),
-      addr: (a) => (mine(a) ? named(a) : `<span class="addr"><span class="owner">${esc(owner(a))}/</span>${esc(agentOf(a))}</span>`),
+      label: (a) => (mine(a) ? agentOf(a) : `${called(owner(a))}/${agentOf(a)}`),
+      addr: (a) => (mine(a) ? named(a) : `<span class="addr"><span class="owner">${esc(called(owner(a)))}/</span>${esc(agentOf(a))}</span>`),
       detail: (a) => checked(a),
       noun: (a) => (mine(a) ? "Your agent" : "Agent"),
       facts: (a, c) => {
@@ -96,7 +101,7 @@
           <p class="kv"><span>Acts for</span><span>${esc(person?.name ? `${person.name} (${owner(a)})` : owner(a))}</span></p>
           <p class="kv"><span>Inbox</span><span>${esc(checked(a))}</span></p>${members("Your side", c?.sides ?? [], a)}`;
       },
-      subtitle: (a) => [mine(a) ? "Your agent" : `${owner(a)}'s agent`, data.agents[a]?.description, data.agents[a] && checked(a).toLowerCase()].filter(Boolean).join(" · "),
+      subtitle: (a) => [mine(a) ? "Your agent" : `${called(owner(a))}'s agent`, data.agents[a]?.description, data.agents[a] && checked(a).toLowerCase()].filter(Boolean).join(" · "),
       ...direct,
     },
     group: {
@@ -107,10 +112,10 @@
       facts: (a) => {
         const g = data.groups[a];
         return g
-          ? `<p class="kv"><span>Owner</span><span class="addr">${esc(g.owner)}</span></p>${members(`${g.members.length} members`, g.members, a)}`
+          ? `<p class="kv"><span>Owner</span>${addr(g.owner)}</p>${members(`${g.members.length} members`, g.members, a)}`
           : `<p class="kv"><span>Membership</span><span>You left this group</span></p>`;
       },
-      subtitle: (a) => { const g = data.groups[a]; return g ? `${g.members.length} members · owner ${g.owner}` : "You are no longer in this group"; },
+      subtitle: (a) => { const g = data.groups[a]; return g ? `${g.members.length} members · owner ${g.owner === data.me ? "you" : label(g.owner)}` : "You are no longer in this group"; },
       where: (link) => `in ${link}`,
       in: (a) => ` in ${label(a)}`,
     },
@@ -118,7 +123,7 @@
   const about = (a) => KIND[kind(a)];
   const label = (a) => about(a).label(a);
   const addr = (a) => about(a).addr(a);
-  // a conversation is named by its other side; the one with yourself by your login, marked as you
+  // a conversation is named by its other side; the one with yourself by your username, marked as you
   const title = (k) => (k === data.me ? `${k} (you)` : label(k));
   const titled = (k) => (k === data.me ? `<span class="addr">${esc(k)} <span class="you">(you)</span></span>` : addr(k));
   const glyph = (a) => `<svg class="kind" viewBox="0 0 16 16" aria-hidden="true">${about(a).glyph}</svg>`;
@@ -165,11 +170,11 @@
 
   const load = async () => {
     const [me, list] = await Promise.all([get("/api/me"), get("/api/conversations")]);
-    data.me = me.login;
-    data.people = Object.fromEntries(me.people.map((p) => [p.login, p]));
-    data.agents = Object.fromEntries(me.people.flatMap((p) => p.agents.map((a) => [`${p.login}/${a.name}`, a])));
+    data.me = me.username;
+    data.people = Object.fromEntries(me.people.map((p) => [p.username, p]));
+    data.agents = Object.fromEntries(me.people.flatMap((p) => p.agents.map((a) => [`${p.username}/${a.name}`, a])));
     data.groups = Object.fromEntries(me.groups.map((g) => [g.address, g]));
-    data.name = data.people[data.me]?.name;
+    data.name = me.name;
     const seen = data.convs && new Map(data.convs.map((c) => [c.key, c.last.sent_at]));
     if (seen) for (const c of list.conversations) if (seen.get(c.key) !== c.last.sent_at) state.arrived.add(c.key);
     data.convs = list.conversations;

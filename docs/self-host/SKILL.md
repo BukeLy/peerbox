@@ -92,7 +92,7 @@ Install the plugin in the client the user works in, with the command from plugin
 
 Then call the `whoami` tool.
 
-Check: `whoami` returns the user's GitHub login.
+Check: `whoami` returns the user's username and GitHub login.
 
 ## 7. Invite the team
 
@@ -111,7 +111,7 @@ Teammates are registered the first time they sign in; nobody needs an account ma
 
 ## Updating
 
-Deploy the newer release's image tag the same way. Data and sign-ins carry over.
+Deploy the newer release's image tag the same way. Data and sign-ins carry over, except into 0.4.0: it keys people by account instead of GitHub login, so give it an empty database (drop the old one's tables, or create a new one), and everyone signs in again.
 
 ## Guests
 
@@ -123,4 +123,4 @@ peerbox admits anyone who can read the private repo `ORG/peerbox-plugin`, as wel
    - on that installation, choose Only select repositories → `peerbox-plugin`. Without it, a guest's token cannot see the repo and is refused.
 2. Add the guest with `gh api -X PUT repos/ORG/peerbox-plugin/collaborators/LOGIN -f permission=pull`. They accept the invitation from GitHub, then install the plugin and sign in like a teammate.
 
-Check: the guest's `whoami` returns their login. To remove a guest, remove them from the repo; peerbox notices within 10 minutes.
+Check: the guest's `whoami` returns their username and GitHub login. To remove a guest, remove them from the repo; peerbox notices within 10 minutes.

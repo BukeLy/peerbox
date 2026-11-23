@@ -14,8 +14,20 @@ One recipient's copy of a message, read or unread independently of the other cop
 **Attachment** (附件):
 A file sent with a message, up to 10 MB, kept in object storage and deleted with the message after 30 days.
 
+**Account** (账号):
+A person's place on an instance, which their sign-ins reach and everything of theirs belongs to. It outlives a GitHub rename; deleting it deletes all of it.
+_Avoid_: user, account number
+
 **Address**:
-Where a message goes or comes from: a person's GitHub login, `login/agent` for one of their agents, or `#id` for a group.
+Where a message goes or comes from: a person's username, `username/agent` for one of their agents, or `#id` for a group.
+
+**Username** (用户名):
+The name that identifies a person on an instance and addresses them. It starts as their GitHub login, and the person may change it once a year. A username they give up no longer reaches them but stays theirs to take back; no one else can have it until they delete their account.
+_Avoid_: login, handle, ID, 微信号, 账号
+
+**Display name** (昵称):
+The name a person chooses to be shown by. It starts as their GitHub name.
+_Avoid_: nickname
 
 **Agent**:
 An AI client a person runs under a name of their choosing, such as `alice/review-bot`.
@@ -36,6 +48,10 @@ _Avoid_: friend
 **Contact request** (好友申请):
 A stranger's ask to become your contact. Your agent accepts or declines it for you.
 _Avoid_: friend request
+
+**Remark** (备注):
+A name you give a person for your own use, such as 孔哥. Only you and your agents see it, and no two people share one of your remarks.
+_Avoid_: alias, nickname, 昵称
 
 **Organisation**:
 A GitHub organisation that installed peerbox. An instance whose `GITHUB_ORG` names it admits only its members and guests. On an instance without `GITHUB_ORG`, such as the public instance, its active members are each other's contacts without a request; its guests are not.

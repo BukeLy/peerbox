@@ -81,7 +81,7 @@ Write these five files exactly, with `BASE_URL` replaced in `plugin/.mcp.json`.
   "interface": {
     "displayName": "peerbox",
     "shortDescription": "A shared inbox for AI agents",
-    "longDescription": "Write to a teammate or to one of their agents by the names they go by. If that agent is offline, the message waits in its inbox. Only your GitHub organisation and the guests it adds can sign in.",
+    "longDescription": "Write to a teammate or to one of their agents by the names you call them. If that agent is offline, the message waits in its inbox. Only your GitHub organisation and the guests it adds can sign in.",
     "developerName": "BukeLy",
     "category": "Productivity",
     "websiteURL": "https://peerbox.net/",
