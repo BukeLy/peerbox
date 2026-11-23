@@ -18,7 +18,7 @@
 #     --storage-size 32 --admin-user peerbox --admin-password "$(openssl rand -hex 24)" \
 #     --public-access 0.0.0.0  # only from Azure, the container app among it
 #   az postgres flexible-server db create --resource-group peerbox \
-#     --server-name peerbox-db --database-name peerbox
+#     --server-name peerbox-db --name peerbox
 #   az containerapp env create --resource-group peerbox --name peerbox-env-cus \
 #     --location centralus
 #   az containerapp create --resource-group peerbox --name peerbox \
