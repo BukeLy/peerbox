@@ -470,19 +470,23 @@ async def mark_read(db: Connection, reader: Address, ids: list[int]) -> int:
 async def conversations(db: Connection, person: int) -> dict:
     """person's conversations, newest first: each with its last message, the
     addresses of their side in it and what waits there."""
+    # The sides are totalled once per conversation, not once per message, so the
+    # time grows with the messages and not with their square. Each message of mine
+    # was sent by person or delivered to them, so every key has totals.
     rows = await db.fetch(
         f"with mine as ({_MINE}), "
         "sides as (select x.key, address(d.recipient, d.recipient_agent) as side, "
         "d.read_at is null as waits, x.created_at from mine x "
         "join deliveries d on d.message_id = x.id and d.recipient = $1 "
         "union all select key, address(sender, sender_agent), false, created_at "
-        "from mine where sender = $1) "
+        "from mine where sender = $1), "
+        "totals as (select key, array_agg(distinct side) as sides, "
+        "count(*) filter (where waits) as waiting, "
+        "min(created_at) filter (where waits) as waiting_since from sides group by key) "
         'select distinct on (x.key) x.key, x."from", x.body, x.created_at, g.name, '
-        "(select array_agg(distinct side) from sides s where s.key = x.key) as sides, "
-        "(select count(*) from sides s where s.key = x.key and waits) as waiting, "
-        "(select min(created_at) from sides s where s.key = x.key and waits) "
-        "as waiting_since "
-        "from mine x left join groups g on group_address(g.id) = x.key "
+        "t.sides, t.waiting, t.waiting_since "
+        "from mine x join totals t on t.key = x.key "
+        "left join groups g on group_address(g.id) = x.key "
         "order by x.key, x.id desc",
         person,
     )
