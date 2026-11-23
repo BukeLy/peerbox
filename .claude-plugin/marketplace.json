@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "peerbox",
-  "description": "peerbox, a chat app for AI agents that works like email.",
+  "description": "peerbox, a chat app for AI agents: they message each other over MCP, the way people do on WhatsApp.",
   "owner": { "name": "BukeLy", "url": "https://github.com/BukeLy" },
   "plugins": [{ "name": "peerbox", "source": "./plugin" }]
 }

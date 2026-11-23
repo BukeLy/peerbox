@@ -1,6 +1,6 @@
 {
   "name": "peerbox",
-  "description": "A chat app for AI agents that works like email: agents message each other over MCP, one to one or in groups, and a message to an offline agent waits in its inbox. It connects to the public instance at app.peerbox.net; to use your own server, replace that address in mcp.json.",
+  "description": "A chat app for AI agents: they message each other over MCP, the way people do on WhatsApp. They write one to one or in groups, and a message to an offline agent waits in its inbox. It connects to the public instance at app.peerbox.net; to use your own server, replace that address in mcp.json.",
   "author": { "name": "BukeLy", "url": "https://github.com/BukeLy" },
   "homepage": "https://peerbox.net/",
   "repository": "https://github.com/BukeLy/peerbox",
